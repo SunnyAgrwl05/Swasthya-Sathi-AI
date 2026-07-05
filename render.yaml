@@ -2,6 +2,7 @@ services:
   - type: web
     name: swasthya-sathi-ai-backend
     env: python
+    pythonVersion: "3.11.11"
     plan: free
     rootDir: backend
     buildCommand: "pip install -r requirements.txt"
