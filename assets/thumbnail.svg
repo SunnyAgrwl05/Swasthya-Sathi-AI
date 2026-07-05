@@ -1,0 +1,76 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg1" cx="15%" cy="0%" r="60%">
+      <stop offset="0%" stop-color="#5B8CFF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#5B8CFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bg2" cx="100%" cy="10%" r="55%">
+      <stop offset="0%" stop-color="#22E1B2" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#22E1B2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22E1B2"/>
+      <stop offset="100%" stop-color="#5B8CFF"/>
+    </linearGradient>
+    <linearGradient id="cardGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" fill="#080B10"/>
+  <rect width="1280" height="720" fill="url(#bg1)"/>
+  <rect width="1280" height="720" fill="url(#bg2)"/>
+
+  <!-- grid texture -->
+  <g stroke="#ffffff" stroke-opacity="0.03">
+    <path d="M0 120 H1280 M0 240 H1280 M0 360 H1280 M0 480 H1280 M0 600 H1280"/>
+    <path d="M160 0 V720 M320 0 V720 M480 0 V720 M640 0 V720 M800 0 V720 M960 0 V720 M1120 0 V720"/>
+  </g>
+
+  <!-- logo mark -->
+  <g transform="translate(90,90)">
+    <rect width="64" height="64" rx="18" fill="url(#accent)"/>
+    <path d="M14 32h14l7-24 13 46 7-22h19" fill="none" stroke="#080B10" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="172" y="118" font-family="Space Grotesk, sans-serif" font-size="26" font-weight="600" fill="#ffffff" opacity="0.55">Swasthya Sathi AI</text>
+
+  <text x="90" y="240" font-family="Space Grotesk, sans-serif" font-size="64" font-weight="700" fill="#ffffff">
+    Ek AI Agent jo
+  </text>
+  <text x="90" y="316" font-family="Space Grotesk, sans-serif" font-size="64" font-weight="700" fill="#ffffff">
+    rural health workforce
+  </text>
+  <text x="90" y="392" font-family="Space Grotesk, sans-serif" font-size="64" font-weight="700" fill="url(#accent)">
+    khud manage karta hai.
+  </text>
+
+  <text x="92" y="440" font-family="Inter, sans-serif" font-size="22" fill="#8B96A5">
+    Gemini function-calling agent · ASHA/ANM attendance · Bihar PHC network
+  </text>
+
+  <!-- pulse line signature -->
+  <path d="M90 520 H480 L500 494 L520 546 L540 520 H620 L636 500 L652 540 L668 520 H1190"
+        fill="none" stroke="url(#accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+        opacity="0.9"/>
+
+  <!-- feature chips -->
+  <g font-family="Inter, sans-serif" font-size="18" fill="#ffffff">
+    <rect x="90" y="580" width="230" height="46" rx="23" fill="url(#cardGlow)" stroke="#1B2433"/>
+    <text x="112" y="609">Natural-language attendance</text>
+
+    <rect x="336" y="580" width="200" height="46" rx="23" fill="url(#cardGlow)" stroke="#1B2433"/>
+    <text x="358" y="609">Real tool-calling</text>
+
+    <rect x="552" y="580" width="230" height="46" rx="23" fill="url(#cardGlow)" stroke="#1B2433"/>
+    <text x="574" y="609">Low-attendance alerts</text>
+
+    <rect x="798" y="580" width="200" height="46" rx="23" fill="url(#cardGlow)" stroke="#1B2433"/>
+    <text x="820" y="609">Hindi + English</text>
+  </g>
+
+  <text x="90" y="672" font-family="Inter, sans-serif" font-size="16" fill="#4B5563">
+    Google AI Agent Builder Series 2026 · Built by Sunny Kumar
+  </text>
+</svg>

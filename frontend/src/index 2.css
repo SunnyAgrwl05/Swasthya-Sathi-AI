@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------- */
+/* Root */
+/* -------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  @apply bg-base text-white font-body antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% -10%, rgba(91, 140, 255, 0.16), transparent),
+    radial-gradient(ellipse 60% 50% at 100% 0%, rgba(34, 225, 178, 0.12), transparent);
+}
+
+/* -------------------------------- */
+/* Global */
+/* -------------------------------- */
+
+* {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+::selection {
+  background: rgba(34, 225, 178, 0.35);
+}
+
+/* -------------------------------- */
+/* Glass Card */
+/* -------------------------------- */
+
+.glass {
+  @apply bg-panel/70 border border-line shadow-glass rounded-2xl;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all .25s ease;
+}
+
+.glass:hover {
+  border-color: rgba(34, 225, 178, .18);
+}
+
+/* -------------------------------- */
+/* Scrollbar */
+/* -------------------------------- */
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #22303F;
+  border-radius: 999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* -------------------------------- */
+/* Animations */
+/* -------------------------------- */
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fadeUp .35s ease forwards;
+}
+
+/* -------------------------------- */
+/* Recharts */
+/* -------------------------------- */
+
+.recharts-responsive-container {
+  width: 100% !important;
+}
+
+.recharts-wrapper {
+  max-width: 100%;
+}
+
+/* -------------------------------- */
+/* Table */
+/* -------------------------------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* -------------------------------- */
+/* Mobile Responsive */
+/* -------------------------------- */
+
+@media (max-width: 640px) {
+
+  html {
+    font-size: 15px;
+  }
+
+  .glass {
+    border-radius: 18px;
+  }
+
+}
