@@ -50,6 +50,12 @@ def get_workers(db: Session = Depends(get_db)):
 
 @app.post("/api/workers", response_model=schemas.WorkerOut)
 def create_worker(worker: schemas.WorkerCreate, db: Session = Depends(get_db)):
+    existing = db.query(models.HealthWorker).filter_by(worker_code=worker.worker_code).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Worker with this worker_code already exists"
+        )
     db_worker = models.HealthWorker(**worker.model_dump())
     db.add(db_worker)
     db.commit()
