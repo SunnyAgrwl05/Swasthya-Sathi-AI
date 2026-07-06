@@ -77,6 +77,21 @@ swasthya-sathi-ai/
 ```
 
 
+<br>
+
+## Run Locally
+
+**1. Get a free Gemini API key:** https://aistudio.google.com/apikey
+
+**2. Backend**
+
+
+cd backend
+cp .env.example .env        # paste your GEMINI_API_KEY into .env
+pip install -r requirements.txt --break-system-packages
+python seed.py               # creates 5 demo workers + 30 days of history
+uvicorn main:app --reload --port 8000
+
 
 
 
