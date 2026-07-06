@@ -6,21 +6,25 @@ Built for the Google AI Agent Builder Series 2026 (HiDevs).
 
 ![thumbnail](assets/thumbnail.png)
 
-## The problem
+## The Problem
 
-Bihar's PHC (Primary Health Centre) network runs on ASHA, ANM and Anganwadi workers spread across dozens of rural sub-centers. Supervisors track their attendance manually in registers or WhatsApp — no visibility into who's underperforming until it's too late.
+Bihar's PHC (Primary Health Centre) network runs on hundreds of ASHA, ANM, and Anganwadi workers spread across rural sub-centers. Supervisors currently track their attendance manually — in paper registers or WhatsApp groups. There's no visibility into who's underperforming until it's already too late to act.
 
-## What makes this an *agent*, not a form
+I built this to fix that.
 
-Most "AI attendance" submissions wrap a chat UI around a database. Swasthya Sathi AI instead gives **Gemini a set of real Python tools** (`mark_attendance`, `get_attendance_summary`, `find_low_attendance_workers`, `who_has_not_marked_today`, `list_workers`) and lets the model decide, turn by turn, which tool(s) to call and in what order — using Gemini's automatic function calling. A supervisor can type:
+## This Is an Agent, Not a Form
 
-> "Sunita Devi ko aaj half-day mark karo aur uska is month ka summary dikhao"
+Most "AI attendance" tools just wrap a chat UI around a database. This project takes a different approach — Gemini is given a set of real Python tools (`mark_attendance`, `get_attendance_summary`, `find_low_attendance_workers`, `who_has_not_marked_today`, `list_workers`), and the model decides on its own, turn by turn, which tool(s) to call and in what order — using Gemini's automatic function calling.
 
-...and the agent will chain two tool calls on its own, then reply in the same language the supervisor used. Every tool call the agent actually performs is shown back to the user as a small audit-trail chip, so nothing happens silently.
+A supervisor can type:
 
-**The proactive feature:** `find_low_attendance_workers` lets a supervisor ask "kaun underperform kar raha hai is month?" and the agent flags anyone below a configurable threshold — turning a reactive register into something that surfaces problems before they escalate.
+> "Sunny Kumar ko aaj half-day mark karo aur uska is month ka summary dikhao"
 
-## Tech stack
+...and the agent will chain two tool calls automatically, then reply in the same language the supervisor used. Every tool call the agent actually performs is shown back as a small audit-trail chip, so nothing happens silently in the background.
+
+**The proactive feature:** `find_low_attendance_workers` lets a supervisor simply ask "who's underperforming this month?" and the agent flags anyone below a configurable threshold — turning a reactive register into something that surfaces problems before they escalate.
+
+## Tech Stack
 
 | Layer | Choice |
 |---|---|
@@ -29,9 +33,8 @@ Most "AI attendance" submissions wrap a chat UI around a database. Swasthya Sath
 | Frontend | React 18 + Vite + Tailwind CSS + Recharts |
 | Deploy | Render (backend) + Vercel (frontend), Docker also included |
 
-## Project structure
+## Project Structure
 
-```
 swasthya-sathi-ai/
 ├── backend/
 │   ├── main.py          # FastAPI app, REST + /api/chat
@@ -50,13 +53,12 @@ swasthya-sathi-ai/
 │   │   └── components/  # Header, StatCards, AttendanceChart, WorkerTable, ChatAgent, PulseDivider
 │   ├── package.json
 │   └── Dockerfile
-├── assets/thumbnail.svg / .png
+├── assets/
 ├── docker-compose.yml
 ├── render.yaml
 └── DEMO_SCRIPT.md
-```
 
-## Run locally
+## Run Locally
 
 **1. Get a free Gemini API key:** https://aistudio.google.com/apikey
 
@@ -97,21 +99,17 @@ docker compose up --build
 2. Add environment variable `VITE_API_URL` = your Render backend URL.
 3. Deploy. Vercel gives you the public link for the HiDevs submission form.
 
-## Try these in the chat
+## Try These in the Chat
 
-- "Priya Kumari ko aaj present mark karo"
+- "Sunny Kumar ko aaj present mark karo"
 - "Is month kaun sabse kam attendance wala hai?"
-- "Sunita Devi ka attendance summary dikhao"
+- "Kajal Kumari ka attendance summary dikhao"
 - "Aaj kisne attendance nahi mark ki?"
-- "Ramesh Yadav ko kal absent mark karo, reason: bimar tha"
-
- 
+- "Neha Kumari ko kal absent mark karo, reason: bimar thi"
 
 ## Contributing
 
-Contributions are welcome! Check the [Issues](../../issues) tab for 
-`good first issue` labeled tasks. Fork the repo, create a branch, and 
-submit a PR — see individual issues for setup details.
+Contributions are welcome! Check the [Issues](../../issues) tab for `good first issue` labeled tasks. Fork the repo, create a branch, and submit a PR — see individual issues for setup details.
 
 ## Author
 
