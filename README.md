@@ -75,3 +75,51 @@ swasthya-sathi-ai/
 ├── render.yaml
 └── DEMO_SCRIPT.md
 ```
+
+
+
+
+
+
+<br>
+
+## Deploy (for the submission link)
+
+**Backend → Render**
+
+1. Push this repo to GitHub.
+2. New → Blueprint on Render, point it at your repo (uses `render.yaml`).
+3. Set `GEMINI_API_KEY` in the Render dashboard's environment tab.
+4. Note the live URL, e.g. `https://swasthya-sathi-ai-backend.onrender.com`.
+
+**Frontend → Vercel**
+
+1. Import the repo, set root directory to `frontend`.
+2. Add environment variable `VITE_API_URL` = your Render backend URL.
+3. Deploy. Vercel gives you the public link for the HiDevs submission form.
+
+<br>
+
+## Try These in the Chat
+
+- "Sunny Kumar ko aaj present mark karo"
+- "Is month kaun sabse kam attendance wala hai?"
+- "Kajal Kumari ka attendance summary dikhao"
+- "Aaj kisne attendance nahi mark ki?"
+- "Neha Kumari ko kal absent mark karo, reason: bimar thi"
+
+<br>
+
+## Contributing
+
+Contributions are welcome! Check the [Issues](../../issues) tab for `good first issue` labeled tasks. Fork the repo, create a branch, and submit a PR — see individual issues for setup details.
+
+<br>
+
+## Author
+
+Sunny Kumar — Co-Organizer & Tech Lead, GDG On Campus BCE Patna · Beta MLSA · GFG Campus Mantri
+
+
+
+
