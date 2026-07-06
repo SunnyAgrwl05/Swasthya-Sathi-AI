@@ -42,3 +42,35 @@ A supervisor can type:
 <br>
 
 ## Project Structure
+
+
+
+
+swasthya-sathi-ai/
+├── backend/
+│   ├── main.py          # FastAPI app, REST + /api/chat
+│   ├── agent.py         # Gemini agent + tool functions (the core feature)
+│   ├── models.py        # SQLAlchemy models
+│   ├── schemas.py       # Pydantic schemas
+│   ├── database.py      # SQLite session setup
+│   ├── seed.py          # Demo data generator
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── Dockerfile
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── api.js
+│   │   └── components/  # Header, StatCards, AttendanceChart, WorkerTable, ChatAgent, PulseDivider
+│   ├── package.json
+│   └── Dockerfile
+├── assets/
+├── docker-compose.yml
+├── render.yaml
+└── DEMO_SCRIPT.md
+
+
+##
+
+
+
