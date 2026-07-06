@@ -77,26 +77,85 @@ swasthya-sathi-ai/
 ```
 
 
+
+
+
 <br>
 
-## Run Locally
+## 🚀 Run Locally
 
-**1. Get a free Gemini API key:** https://aistudio.google.com/apikey
+### 1. Get a free Gemini API Key
 
-**2. Backend**
+Visit: https://aistudio.google.com/apikey
 
+---
 
+### 2. Backend
+
+```bash
 cd backend
-cp .env.example .env        # paste your GEMINI_API_KEY into .env
+
+cp .env.example .env
+# Paste your GEMINI_API_KEY into the .env file
+
 pip install -r requirements.txt --break-system-packages
-python seed.py               # creates 5 demo workers + 30 days of history
+
+python seed.py
+# Creates 5 demo workers with 30 days of attendance history
+
 uvicorn main:app --reload --port 8000
+```
+
+---
+
+### 3. Frontend
+
+Open a **new terminal** and run:
+
+```bash
+cd frontend
+
+npm install
+
+npm run dev
+```
+
+Open your browser and visit:
+
+```text
+http://localhost:5173
+```
+
+The dashboard will appear on the left, and the AI Agent chat interface will appear on the right.
+
+---
+
+### 🐳 Run with Docker
+
+```bash
+cp backend/.env.example backend/.env
+# Add your GEMINI_API_KEY to backend/.env
+
+docker compose up --build
+```
+
+
+ 
 
 
 
 
 
-<br>
+
+
+
+
+
+
+
+
+
+
 
 ## Deploy (for the submission link)
 
