@@ -41,8 +41,9 @@ A supervisor can type:
 
 <br>
 
-## Project Structure
+ ## Project Structure
 
+```text
 swasthya-sathi-ai/
 ├── backend/
 │   ├── main.py              # FastAPI app, REST + /api/chat
@@ -73,3 +74,4 @@ swasthya-sathi-ai/
 ├── docker-compose.yml
 ├── render.yaml
 └── DEMO_SCRIPT.md
+```
