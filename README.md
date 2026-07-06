@@ -105,6 +105,14 @@ docker compose up --build
 - "Aaj kisne attendance nahi mark ki?"
 - "Ramesh Yadav ko kal absent mark karo, reason: bimar tha"
 
+ 
+
+## Contributing
+
+Contributions are welcome! Check the [Issues](../../issues) tab for 
+`good first issue` labeled tasks. Fork the repo, create a branch, and 
+submit a PR — see individual issues for setup details.
+
 ## Author
 
 Sunny Kumar — Co-Organizer & Tech Lead, GDG On Campus BCE Patna · Beta MLSA · GFG Campus Mantri
