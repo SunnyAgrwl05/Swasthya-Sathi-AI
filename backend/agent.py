@@ -735,20 +735,43 @@ Return ONLY the formatted response.
     return tool_output
 
 
-INSIGHTS_SYSTEM_INSTRUCTION = """You are the Insights Agent for Swasthya Sathi AI, a
-specialist that ONLY writes short analytical reports for a PHC supervisor in Bihar.
-You do not take actions or call tools. You are given this week's and last week's
-attendance numbers per health worker. Write a concise report (5-8 sentences, Hinglish
-or English matching context) that: (1) calls out any worker whose attendance is
-trending down week-over-week, (2) calls out any worker improving, (3) gives one
-concrete, practical recommendation for the supervisor. Be specific with numbers.
+def get_insights_system_instruction(language: str = "hi") -> str:
+    if language == "en":
+        report_language = "Write the report in simple, professional English."
+    else:
+        report_language = "Write the report in simple Hindi."
+
+    return f"""You are the Insights Agent for Swasthya Sathi AI, a specialist that ONLY writes short analytical reports for a PHC supervisor in Bihar.
+
+You do not take actions or call tools.
+
+You are given this week's and last week's attendance numbers per health worker.
+
+{report_language}
+
+Write a concise report (5–8 sentences) that:
+
+(1) calls out any worker whose attendance is trending down week-over-week,
+(2) calls out any worker improving,
+(3) gives one concrete, practical recommendation for the supervisor.
+
+Be specific with numbers.
+
 No preamble, no headers, just the report as flowing prose."""
 
 
-def generate_weekly_insights() -> str:
+def generate_weekly_insights(language: str = "hi") -> str:
     """Runs the dedicated Insights Agent over the last two weeks of attendance data
-    and returns a written trend report."""
-
+    and returns a written trend report.
+    Args:
+        language: "hi" or "en"
+    """
+    if language not in ("hi", "en"):
+        language = "hi"
+    if language == "en":
+        lang_line = "Write in simple, professional English."
+    else:
+        lang_line = "Write in simple Hindi."
     db = SessionLocal()
 
     try:
@@ -808,14 +831,14 @@ Instructions:
 - Return ONLY plain text.
 - Do NOT use Markdown.
 - Do NOT use **, #, ## or bullet points.
-- Write in simple Hindi.
+- {lang_line}
 - Mention workers whose attendance improved.
 - Mention workers whose attendance declined.
 - Mention workers needing follow-up.
 - End with one practical recommendation.
 - Keep the report within 6-8 lines.
 """,
-                system_instruction=INSIGHTS_SYSTEM_INSTRUCTION,
+                system_instruction=get_insights_system_instruction(language),
             )
 
             return response.text
@@ -834,7 +857,7 @@ Attendance data:
 
 Return ONLY plain text.
 Do NOT use Markdown.
-Write in simple Hindi.
+{lang_line}
 """
             )
 

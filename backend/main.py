@@ -1,6 +1,7 @@
 import datetime
 
 from fastapi import FastAPI, Depends, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,8 @@ app = FastAPI(
     title="Swasthya Sathi AI",
     version="1.0.0",
 )
+class WeeklyInsightsRequest(BaseModel):
+    language: str = "hi"
 
 app.add_middleware(
     CORSMiddleware,
@@ -222,7 +225,15 @@ def daily_broadcast():
 
 
 @app.get("/api/insights/weekly")
-def weekly_insights():
+def weekly_insights(language: str = "hi"):
     return {
-        "report": generate_weekly_insights()
+        "report": generate_weekly_insights(language=language)
+    }
+
+@app.post("/api/insights/weekly")
+def weekly_insights_post(request: WeeklyInsightsRequest):
+    return {
+        "report": generate_weekly_insights(
+            language=request.language
+        )
     }
