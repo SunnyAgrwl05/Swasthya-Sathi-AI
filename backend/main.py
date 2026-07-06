@@ -1,4 +1,5 @@
 import datetime
+import time
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -110,6 +111,13 @@ def create_attendance(
         existing.note = record.note
         existing.marked_by = "manual"
 
+        db.add(models.AuditLog(
+            action="Update Attendance",
+            entity="AttendanceRecord",
+            performed_by="manual",
+            description=f"Updated attendance for worker_id {record.worker_id} on {record.date} to {record.status}",
+        ))
+
         db.commit()
         db.refresh(existing)
 
@@ -121,6 +129,13 @@ def create_attendance(
     )
 
     db.add(db_record)
+    db.flush()
+    db.add(models.AuditLog(
+        action="Create Attendance",
+        entity="AttendanceRecord",
+        performed_by="manual",
+        description=f"Created attendance for worker_id {record.worker_id} on {record.date} as {record.status}",
+    ))
     db.commit()
     db.refresh(db_record)
 
@@ -193,12 +208,25 @@ def chat(
 
     db.commit()
 
+    start_time = time.time()
     reply, actions = chat_with_agent(req.message)
+    end_time = time.time()
+    exec_time = int((end_time - start_time) * 1000)
 
     db.add(
         models.ChatLog(
             role="agent",
             message=reply,
+        )
+    )
+
+    db.add(
+        models.AgentLog(
+            query=req.message,
+            response=reply,
+            tools_used=", ".join(actions) if actions else None,
+            execution_time_ms=exec_time,
+            status="Success",
         )
     )
 
@@ -215,9 +243,22 @@ def chat(
 # =====================================================
 
 @app.get("/api/broadcast/daily")
-def daily_broadcast():
+def daily_broadcast(db: Session = Depends(get_db)):
+    msg = generate_daily_broadcast()
+    workers = db.query(models.HealthWorker).all()
+    for w in workers:
+        db.add(
+            models.NotificationLog(
+                worker_name=w.name,
+                phone=w.phone,
+                notification_type="WhatsApp",
+                message=msg,
+                status="Sent"
+            )
+        )
+    db.commit()
     return {
-        "message": generate_daily_broadcast()
+        "message": msg
     }
 
 
