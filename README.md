@@ -4,7 +4,7 @@
 
 Built for the Google AI Agent Builder Series 2026 (HiDevs).
 
-![thumbnail](assets/thumbnail.png)
+![Swasthya Sathi AI Dashboard](assets/dashboard.png)
 
 <br>
 
