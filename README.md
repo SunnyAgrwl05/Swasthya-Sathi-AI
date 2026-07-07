@@ -192,7 +192,7 @@ Contributions are welcome! Check the [Issues](../../issues) tab for `good first 
 
 ## Author
 
-Sunny Kumar — Co-Organizer & Tech Lead, GDG On Campus BCE Patna · Beta MLSA · GFG Campus Mantri
+Sunny Kumar — Co-Organizer & Tech Lead, GDG On Campus BCE Patna · Beta MLSA ·  GSA-Google
 
 
 
