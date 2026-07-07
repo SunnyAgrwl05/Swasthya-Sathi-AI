@@ -14,7 +14,13 @@ export const api = {
   getSummary: (days = 30) => req(`/api/analytics/summary?days=${days}`),
   sendChat: (message) => req('/api/chat', { method: 'POST', body: JSON.stringify({ message }) }),
   getDailyBroadcast: () => req('/api/broadcast/daily'),
-  getWeeklyInsights: () => req('/api/insights/weekly'),
+  getWeeklyInsights: (language = "hi") =>
+    req("/api/insights/weekly", {
+        method: "POST",
+        body: JSON.stringify({
+            language,
+        }),
+    }),
 }
 
 
