@@ -4,10 +4,11 @@ from typing import Optional
 
 
 class WorkerCreate(BaseModel):
+    worker_code: str
     name: str
     role: str = "ASHA Worker"
-    center: Optional[str] = None
-    phone: Optional[str] = None
+    center: str
+    phone: str
 
 
 class WorkerOut(WorkerCreate):
