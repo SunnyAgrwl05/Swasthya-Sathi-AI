@@ -68,6 +68,7 @@ swasthya-sathi-ai/
 │   │       ├── ChatAgent
 │   │       └── PulseDivider
 │   ├── package.json
+│   ├── .env.example
 │   └── Dockerfile
 │
 ├── assets/
@@ -114,6 +115,11 @@ Open a **new terminal** and run:
 
 ```bash
 cd frontend
+
+cp .env.example .env
+# VITE_API_URL can be left blank for local dev — Vite's dev server
+# already proxies /api requests to http://localhost:8000 (see vite.config.js).
+# Only set it when pointing the frontend at a deployed backend (see Deploy section below).
 
 npm install
 
