@@ -1,205 +1,303 @@
-# Swasthya Sathi AI
+# 🩺 Swasthya Sathi AI
 
-**An AI agent that manages rural health worker attendance in plain Hindi/English — not a chatbot skin on a form.**
+<p align="center">
 
-Built for the Google AI Agent Builder Series 2026 (HiDevs).
+![CI](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/SunnyAgrwl05/Swasthya-Sathi-AI)
+![Stars](https://img.shields.io/github/stars/SunnyAgrwl05/Swasthya-Sathi-AI)
+![Forks](https://img.shields.io/github/forks/SunnyAgrwl05/Swasthya-Sathi-AI)
+![Issues](https://img.shields.io/github/issues/SunnyAgrwl05/Swasthya-Sathi-AI)
 
-![Swasthya Sathi AI Dashboard](assets/dashboard.png)
+</p>
 
-<br>
+> **An AI-powered attendance management agent for rural healthcare workers.**
+>
+> Built with **Gemini Function Calling + FastAPI + React** for the **Google AI Agent Builder Series 2026**.
 
-## The Problem
+---
 
-Bihar's PHC (Primary Health Centre) network runs on hundreds of ASHA, ANM, and Anganwadi workers spread across rural sub-centers. Supervisors currently track their attendance manually — in paper registers or WhatsApp groups. There's no visibility into who's underperforming until it's already too late to act.
+## 🌐 Live Demo
 
-I built this to fix that.
+**Frontend**
 
-<br>
+https://swasthya-sathi-ai-one.vercel.app
 
-## This Is an Agent, Not a Form
+**Backend API**
 
-Most "AI attendance" tools just wrap a chat UI around a database. This project takes a different approach — Gemini is given a set of real Python tools (`mark_attendance`, `get_attendance_summary`, `find_low_attendance_workers`, `who_has_not_marked_today`, `list_workers`), and the model decides on its own, turn by turn, which tool(s) to call and in what order — using Gemini's automatic function calling.
+https://your-render-url.onrender.com
 
-A supervisor can type:
+---
 
-> "Sunny Kumar ko aaj half-day mark karo aur uska is month ka summary dikhao"
+## 📸 Preview
 
-...and the agent will chain two tool calls automatically, then reply in the same language the supervisor used. Every tool call the agent actually performs is shown back as a small audit-trail chip, so nothing happens silently in the background.
+![Dashboard](assets/dashboard.png)
 
-**The proactive feature:** `find_low_attendance_workers` lets a supervisor simply ask "who's underperforming this month?" and the agent flags anyone below a configurable threshold — turning a reactive register into something that surfaces problems before they escalate.
+---
 
-<br>
+# 🚑 Problem Statement
 
-## Tech Stack
+Rural Primary Health Centres depend on hundreds of ASHA, ANM and Anganwadi workers.
 
-| Layer | Choice |
-|---|---|
-| Agent / LLM | Gemini 2.0 Flash, Python SDK, automatic function calling |
-| Backend | FastAPI + SQLAlchemy + SQLite |
-| Frontend | React 18 + Vite + Tailwind CSS + Recharts |
-| Deploy | Render (backend) + Vercel (frontend), Docker also included |
+Attendance is usually tracked using:
 
-<br>
+- Paper registers
+- WhatsApp groups
+- Excel sheets
 
- ## Project Structure
+As a result,
+
+- supervisors don't know who missed attendance
+- attendance summaries take time
+- low-performing workers are discovered too late
+
+Swasthya Sathi AI solves this with an intelligent AI Agent.
+
+---
+
+# 🤖 Why This Isn't Just Another Chatbot
+
+Unlike traditional chatbot CRUD apps,
+
+Swasthya Sathi AI gives Gemini access to real backend tools.
+
+Instead of generating fake responses, Gemini decides which function should run.
+
+Example:
+
+```
+Mark Sunny Kumar present today
+then show this month's attendance.
+```
+
+Gemini automatically executes
+
+```
+mark_attendance()
+
+↓
+
+get_attendance_summary()
+```
+
+without writing custom workflow code.
+
+The supervisor simply talks naturally.
+
+---
+
+# ✨ Features
+
+- AI Agent with automatic function calling
+- Hindi + English conversations
+- Attendance analytics dashboard
+- Attendance summary
+- Low attendance detection
+- Worker management
+- Daily attendance tracking
+- REST APIs
+- Responsive UI
+- Docker support
+- GitHub Actions CI
+
+---
+
+# 🏗 Architecture
 
 ```text
-swasthya-sathi-ai/
-├── backend/
-│   ├── main.py              # FastAPI app, REST + /api/chat
-│   ├── agent.py             # Gemini agent + tool functions
-│   ├── models.py            # SQLAlchemy models
-│   ├── schemas.py           # Pydantic schemas
-│   ├── database.py          # SQLite session setup
-│   ├── seed.py              # Demo data generator
-│   ├── requirements.txt
-│   ├── .env.example
-│   └── Dockerfile
-│
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── api.js
-│   │   └── components/
-│   │       ├── Header
-│   │       ├── StatCards
-│   │       ├── AttendanceChart
-│   │       ├── WorkerTable
-│   │       ├── ChatAgent
-│   │       └── PulseDivider
-│   ├── package.json
-│   ├── .env.example
-│   └── Dockerfile
-│
-├── assets/
-├── docker-compose.yml
-├── render.yaml
-└── DEMO_SCRIPT.md
-```
+                User
 
+                  │
 
+                  ▼
 
+      React + Vite Frontend
 
+                  │
 
-<br>
+             REST API
 
-## 🚀 Run Locally
+                  │
 
-### 1. Get a free Gemini API Key
+                  ▼
 
-Visit: https://aistudio.google.com/apikey
+          FastAPI Backend
 
----
+                  │
 
-### 2. Backend
+      Gemini Function Calling
 
-```bash
-cd backend
+      ┌─────────┼──────────┐
 
-cp .env.example .env
-# Paste your GEMINI_API_KEY into the .env file
+      ▼         ▼          ▼
 
-pip install -r requirements.txt --break-system-packages
+Attendance  Analytics   Workers
 
-python seed.py
-# Creates 5 demo workers with 30 days of attendance history
+                  │
 
-uvicorn main:app --reload --port 8000
+                  ▼
+
+             SQLite Database
 ```
 
 ---
 
-### 3. Frontend
+# ⚡ Tech Stack
 
-Open a **new terminal** and run:
-
-```bash
-cd frontend
-
-cp .env.example .env
-# VITE_API_URL can be left blank for local dev — Vite's dev server
-# already proxies /api requests to http://localhost:8000 (see vite.config.js).
-# Only set it when pointing the frontend at a deployed backend (see Deploy section below).
-
-npm install
-
-npm run dev
-```
-
-Open your browser and visit:
-
-```text
-http://localhost:5173
-```
-
-The dashboard will appear on the left, and the AI Agent chat interface will appear on the right.
+| Layer | Technology |
+|--------|------------|
+| AI | Gemini 2.0 Flash |
+| Backend | FastAPI |
+| Database | SQLite |
+| ORM | SQLAlchemy |
+| Frontend | React + Vite |
+| Charts | Recharts |
+| Styling | Tailwind CSS |
+| Deployment | Render + Vercel |
+| Testing | Pytest |
+| CI | GitHub Actions |
+| Container | Docker |
 
 ---
 
-### 🐳 Run with Docker
+# 📂 Project Structure
 
-```bash
-cp backend/.env.example backend/.env
-# Add your GEMINI_API_KEY to backend/.env
+(keep your current tree)
 
-docker compose up --build
+---
+
+# 📖 REST APIs
+
+| Method | Endpoint | Description |
+|----------|-------------|----------------|
+| GET | /api/workers | List workers |
+| GET | /api/attendance | Attendance |
+| POST | /api/chat | AI Agent |
+| POST | /api/attendance | Mark attendance |
+
+---
+
+# 🚀 Local Setup
+
+(keep current)
+
+---
+
+# 🐳 Docker
+
+(keep current)
+
+---
+
+# ☁ Deployment
+
+(keep current)
+
+---
+
+# 💬 Example Prompts
+
+```
+Sunny Kumar ko present mark karo
+
+Kajal Kumari ki attendance dikhao
+
+Is month sabse kam attendance kiski hai?
+
+Kal absent mark karo
+
+Aaj kisne attendance nahi lagayi?
 ```
 
+---
 
- 
+# 🧪 Testing
 
+Run backend tests
 
+```bash
+pytest
+```
 
+GitHub Actions automatically executes tests on every push.
 
+---
 
+# 🛣 Roadmap
 
+## Completed
 
+- AI Agent
+- Dashboard
+- Charts
+- Docker
+- CI/CD
+- REST APIs
+- Deployment
 
+## Planned
 
+- Authentication
+- Voice Assistant
+- WhatsApp Integration
+- SMS Alerts
+- Export PDF
+- Multi-language
+- Notifications
 
+---
 
+# 🤝 Contributing
 
+Contributions are welcome!
 
+1. Fork the repository
 
+2. Create a branch
 
+```
+git checkout -b feature-name
+```
 
-## Deploy (for the submission link)
+3. Commit
 
-**Backend → Render**
+```
+git commit -m "Add feature"
+```
 
-1. Push this repo to GitHub.
-2. New → Blueprint on Render, point it at your repo (uses `render.yaml`).
-3. Set `GEMINI_API_KEY` in the Render dashboard's environment tab.
-4. Note the live URL, e.g. `https://swasthya-sathi-ai-backend.onrender.com`.
+4. Push
 
-**Frontend → Vercel**
+```
+git push origin feature-name
+```
 
-1. Import the repo, set root directory to `frontend`.
-2. Add environment variable `VITE_API_URL` = your Render backend URL.
-3. Deploy. Vercel gives you the public link for the HiDevs submission form.
+5. Open a Pull Request.
 
-<br>
+---
 
-## Try These in the Chat
+# ⭐ Support
 
-- "Sunny Kumar ko aaj present mark karo"
-- "Is month kaun sabse kam attendance wala hai?"
-- "Kajal Kumari ka attendance summary dikhao"
-- "Aaj kisne attendance nahi mark ki?"
-- "Neha Kumari ko kal absent mark karo, reason: bimar thi"
+If you like this project,
 
-<br>
+please consider giving it a ⭐ on GitHub.
 
-## Contributing
+---
 
-Contributions are welcome! Check the [Issues](../../issues) tab for `good first issue` labeled tasks. Fork the repo, create a branch, and submit a PR — see individual issues for setup details.
+# 👨‍💻 Author
 
-<br>
+**Sunny Kumar**
 
-## Author
+Co-Organizer & Tech Lead — GDG On Campus BCE Patna
 
-Sunny Kumar — Co-Organizer & Tech Lead, GDG On Campus BCE Patna · Beta MLSA ·  GSA-Google
+Beta MLSA
 
+Google Student Ambassador
 
+LinkedIn
 
+GitHub
 
+---
+
+# 📜 License
+
+MIT License
