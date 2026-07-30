@@ -10,21 +10,20 @@
 
 </p>
 
-> **An AI-powered attendance management agent for rural healthcare workers.**
->
-> Built with **Gemini Function Calling + FastAPI + React** for the **Google AI Agent Builder Series 2026**.
+<p align="center">
+<b>AI-powered attendance management for rural healthcare workers.</b><br>
+Built using <b>Gemini Function Calling + FastAPI + React</b> for the <b>Google AI Agent Builder Series 2026</b>.
+</p>
 
 ---
 
 ## 🌐 Live Demo
 
-**Frontend**
-
-https://swasthya-sathi-ai-one.vercel.app
-
-**Backend API**
-
-https://your-render-url.onrender.com
+| Service | Link |
+|---------|------|
+| 🚀 Frontend | https://swasthya-sathi-ai-one.vercel.app |
+| ⚙️ Backend API | https://swasthya-sathi-ai.onrender.com |
+| 📚 API Docs | https://swasthya-sathi-ai.onrender.com/docs |
 
 ---
 
@@ -34,44 +33,50 @@ https://your-render-url.onrender.com
 
 ---
 
-# 🚑 Problem Statement
+## 📖 About the Project
 
-Rural Primary Health Centres depend on hundreds of ASHA, ANM and Anganwadi workers.
+Swasthya Sathi AI is an AI-powered attendance management system designed for rural healthcare organizations. It combines a modern React dashboard with a FastAPI backend and Google's Gemini Function Calling to help supervisors manage attendance using natural language.
 
-Attendance is usually tracked using:
+The AI agent can understand user requests, invoke backend tools automatically, and provide attendance insights without requiring users to navigate complex interfaces.
+
+---
+
+## 🚑 Problem Statement
+
+Primary Health Centres across rural India depend on ASHA, ANM and Anganwadi workers.
+
+Attendance is commonly managed using:
 
 - Paper registers
 - WhatsApp groups
 - Excel sheets
 
-As a result,
+This makes it difficult for supervisors to:
 
-- supervisors don't know who missed attendance
-- attendance summaries take time
-- low-performing workers are discovered too late
+- Track attendance efficiently
+- Monitor attendance trends
+- Identify low-performing workers
+- Generate attendance summaries quickly
 
-Swasthya Sathi AI solves this with an intelligent AI Agent.
+Swasthya Sathi AI transforms attendance tracking into an intelligent AI-powered workflow.
 
 ---
 
-# 🤖 Why This Isn't Just Another Chatbot
+## 🤖 Why This Isn't Just Another Chatbot
 
-Unlike traditional chatbot CRUD apps,
+Instead of generating plain text responses, Gemini receives access to real backend tools and automatically decides which function should run.
 
-Swasthya Sathi AI gives Gemini access to real backend tools.
+### Example
 
-Instead of generating fake responses, Gemini decides which function should run.
+```text
+Sunny Kumar ko present mark karo
 
-Example:
-
-```
-Mark Sunny Kumar present today
-then show this month's attendance.
+phir uska monthly summary dikhao
 ```
 
-Gemini automatically executes
+The AI Agent automatically chains backend tool calls like:
 
-```
+```text
 mark_attendance()
 
 ↓
@@ -79,194 +84,214 @@ mark_attendance()
 get_attendance_summary()
 ```
 
-without writing custom workflow code.
-
-The supervisor simply talks naturally.
+No manual workflow logic is required.
 
 ---
 
-# ✨ Features
+## ✨ Features
 
-- AI Agent with automatic function calling
-- Hindi + English conversations
-- Attendance analytics dashboard
-- Attendance summary
-- Low attendance detection
-- Worker management
-- Daily attendance tracking
-- REST APIs
-- Responsive UI
-- Docker support
-- GitHub Actions CI
+- 🤖 Gemini Function Calling
+- 🌐 Hindi & English conversations
+- 👨‍⚕️ Healthcare worker management
+- 📅 Attendance tracking
+- 📊 Analytics dashboard
+- 📈 Interactive charts
+- 🚨 Low-attendance detection
+- ⚡ FastAPI REST APIs
+- 📱 Responsive React UI
+- 🐳 Docker support
+- ✅ GitHub Actions CI
 
 ---
 
-# 🏗 Architecture
+## 🏗 System Architecture
 
 ```text
-                User
-
-                  │
-
-                  ▼
-
-      React + Vite Frontend
-
-                  │
-
-             REST API
-
-                  │
-
-                  ▼
-
-          FastAPI Backend
-
-                  │
-
+                  User
+                    │
+                    ▼
+         React + Vite Frontend
+                    │
+               REST API
+                    │
+                    ▼
+            FastAPI Backend
+                    │
       Gemini Function Calling
-
       ┌─────────┼──────────┐
-
       ▼         ▼          ▼
-
-Attendance  Analytics   Workers
-
-                  │
-
-                  ▼
-
+ Attendance  Analytics   Workers
+                    │
+                    ▼
              SQLite Database
 ```
 
 ---
 
-# ⚡ Tech Stack
+## ⚡ Tech Stack
 
 | Layer | Technology |
 |--------|------------|
 | AI | Gemini 2.0 Flash |
 | Backend | FastAPI |
-| Database | SQLite |
 | ORM | SQLAlchemy |
+| Database | SQLite |
 | Frontend | React + Vite |
-| Charts | Recharts |
 | Styling | Tailwind CSS |
-| Deployment | Render + Vercel |
+| Charts | Recharts |
 | Testing | Pytest |
-| CI | GitHub Actions |
+| CI/CD | GitHub Actions |
 | Container | Docker |
+| Deployment | Render + Vercel |
 
 ---
 
-# 📂 Project Structure
+## 📂 Project Structure
 
-(keep your current tree)
+```text
+swasthya-sathi-ai/
+├── backend/
+├── frontend/
+├── assets/
+├── .github/
+│   └── workflows/
+├── docker-compose.yml
+├── render.yaml
+└── README.md
+```
 
 ---
 
-# 📖 REST APIs
+## 📖 REST APIs
 
 | Method | Endpoint | Description |
-|----------|-------------|----------------|
-| GET | /api/workers | List workers |
-| GET | /api/attendance | Attendance |
-| POST | /api/chat | AI Agent |
-| POST | /api/attendance | Mark attendance |
+|--------|----------|-------------|
+| GET | `/api/workers` | List workers |
+| GET | `/api/attendance` | Attendance records |
+| POST | `/api/chat` | AI Agent |
+| POST | `/api/attendance` | Mark attendance |
 
 ---
 
-# 🚀 Local Setup
+## 🚀 Local Setup
 
-(keep current)
+### Backend
 
----
-
-# 🐳 Docker
-
-(keep current)
-
----
-
-# ☁ Deployment
-
-(keep current)
-
----
-
-# 💬 Example Prompts
-
+```bash
+cd backend
+cp .env.example .env
+pip install -r requirements.txt
+python seed.py
+uvicorn main:app --reload
 ```
+
+### Frontend
+
+```bash
+cd frontend
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+---
+
+## 🐳 Docker
+
+```bash
+cp backend/.env.example backend/.env
+docker compose up --build
+```
+
+---
+
+## ☁️ Deployment
+
+- **Frontend:** Vercel
+- **Backend:** Render
+- **Database:** SQLite
+
+---
+
+## 💬 Example Prompts
+
+```text
 Sunny Kumar ko present mark karo
 
 Kajal Kumari ki attendance dikhao
 
 Is month sabse kam attendance kiski hai?
 
-Kal absent mark karo
-
 Aaj kisne attendance nahi lagayi?
+
+Kal absent mark karo
 ```
 
 ---
 
-# 🧪 Testing
+## 🧪 Testing
 
-Run backend tests
+Run backend tests:
 
 ```bash
 pytest
 ```
 
-GitHub Actions automatically executes tests on every push.
+GitHub Actions automatically runs backend tests on every push and pull request.
 
 ---
 
-# 🛣 Roadmap
+## 🛣 Roadmap
 
-## Completed
+### ✅ Completed
 
 - AI Agent
+- Gemini Function Calling
 - Dashboard
-- Charts
-- Docker
-- CI/CD
+- Attendance Analytics
 - REST APIs
+- Docker Support
+- CI/CD
 - Deployment
 
-## Planned
+### 🚀 Planned
 
 - Authentication
 - Voice Assistant
 - WhatsApp Integration
 - SMS Alerts
-- Export PDF
-- Multi-language
+- Export Reports (PDF)
 - Notifications
+- Multi-language Support
 
 ---
 
-# 🤝 Contributing
+## 🤝 Contributing
 
 Contributions are welcome!
 
-1. Fork the repository
+1. Fork this repository.
+2. Create a feature branch.
 
-2. Create a branch
-
-```
+```bash
 git checkout -b feature-name
 ```
 
-3. Commit
+3. Commit your changes.
 
-```
+```bash
 git commit -m "Add feature"
 ```
 
-4. Push
+4. Push your branch.
 
-```
+```bash
 git push origin feature-name
 ```
 
@@ -274,30 +299,27 @@ git push origin feature-name
 
 ---
 
-# ⭐ Support
+## ⭐ Support
 
-If you like this project,
-
-please consider giving it a ⭐ on GitHub.
+If you found this project useful, please consider giving it a ⭐ on GitHub.
 
 ---
 
-# 👨‍💻 Author
+## 👨‍💻 Author
 
 **Sunny Kumar**
 
-Co-Organizer & Tech Lead — GDG On Campus BCE Patna
+- 🎓 B.Tech CSE, Bakhtiyarpur College of Engineering
+- 🚀 Co-Organizer & Tech Lead — GDG On Campus BCE Patna
+- 🌟 Beta MLSA
+- 🤖 Google Student Ambassador
 
-Beta MLSA
+**GitHub:** https://github.com/SunnyAgrwl05
 
-Google Student Ambassador
-
-LinkedIn
-
-GitHub
+**LinkedIn:** https://www.linkedin.com/in/sunny-kumar-a06484297
 
 ---
 
-# 📜 License
+## 📜 License
 
-MIT License
+This project is licensed under the **MIT License**.
