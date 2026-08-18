@@ -323,3 +323,8 @@ If you found this project useful, please consider giving it a ⭐ on GitHub.
 ## 📜 License
 
 This project is licensed under the **MIT License**.
+
+
+## feat(testing): Add frontend unit tests using Vitest and React Testing Library
+
+Documentation reference and guidelines for #18.
