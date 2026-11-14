@@ -5,7 +5,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
     {
-        ignores: ["dist/**", "node_modules/**"],
+        ignores: ["dist/**", "node_modules/**", "coverage/**", "**/* 2.*"],
     },
 
     js.configs.recommended,
@@ -37,6 +37,8 @@ export default [
         rules: {
             ...reactHooks.configs.recommended.rules,
 
+            "react-hooks/set-state-in-effect": "off",
+
             "no-unused-vars": [
                 "error",
                 {
@@ -52,6 +54,25 @@ export default [
                     allowConstantExport: true,
                 },
             ],
+        },
+    },
+
+    {
+        files: ["**/*.test.{js,jsx}", "**/setupTests.js"],
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+                ...globals.node,
+                describe: "readonly",
+                it: "readonly",
+                test: "readonly",
+                expect: "readonly",
+                beforeEach: "readonly",
+                afterEach: "readonly",
+                beforeAll: "readonly",
+                afterAll: "readonly",
+                vi: "readonly",
+            },
         },
     },
 ];

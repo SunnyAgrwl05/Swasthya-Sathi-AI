@@ -384,7 +384,7 @@ def generate_daily_broadcast() -> str:
 
         lines = [
             f"*Swasthya Sathi AI — Daily Update ({today.strftime('%d %b %Y')})*",
-            f"Present today: {present_today}/{total}", 
+            f"Present today: {present_today}/{total}",
         ]
 
         if missing:
@@ -704,7 +704,7 @@ def call_openrouter(user_message: str):
     data = response.json()
 
     return data["choices"][0]["message"]["content"]
- 
+
 
 def format_agent_response(user_query: str, tool_output: str) -> str:
     """
