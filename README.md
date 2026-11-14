@@ -1,5 +1,8 @@
 # Swasthya Sathi AI
 
+# Swasthya Sathi AI
+
+![CI Pipeline](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI/actions/workflows/ci.yml/badge.svg?branch=main)
 Swasthya Sathi AI is an AI-powered attendance and workforce monitoring system for rural healthcare teams. It combines a FastAPI backend, a React dashboard, and an AI operations agent that can understand supervisor requests, manage attendance records, summarize trends, and generate operational updates.
 
 The project is designed around a practical public-health workflow: supervisors can track ASHA, ANM, and Anganwadi worker attendance, identify low-attendance patterns, and ask natural-language questions in Hindi or English without navigating every dashboard action manually.

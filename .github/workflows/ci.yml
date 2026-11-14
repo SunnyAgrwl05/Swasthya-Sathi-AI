@@ -1,14 +1,28 @@
-name: Backend Tests
+
+name: Swasthya Sathi AI CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  backend:
+    name: Backend - Python / FastAPI
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
 
     steps:
       - name: Checkout repository
@@ -18,13 +32,81 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
         run: |
-          cd backend
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install ruff
 
-      - name: Run tests
+      - name: Backend lint
+        run: ruff check .
+
+      - name: Backend syntax check
+        run: python -m compileall -q .
+
+      - name: Run backend tests
+        run: pytest -v
+
+      - name: Verify FastAPI application startup
+        shell: bash
         run: |
-          cd backend
-          pytest
+          uvicorn main:app --host 127.0.0.1 --port 8000 \
+            > /tmp/fastapi.log 2>&1 &
+          SERVER_PID=$!
+
+          cleanup() {
+            kill "$SERVER_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for i in {1..20}; do
+            if curl --fail http://127.0.0.1:8000/; then
+              echo "FastAPI started successfully."
+              exit 0
+            fi
+
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              cat /tmp/fastapi.log
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          cat /tmp/fastapi.log
+          echo "FastAPI failed to start."
+          exit 1
+
+  frontend:
+    name: Frontend - React / Vite
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Frontend lint
+        run: npm run lint
+
+      - name: Run frontend tests
+        run: npm test -- --passWithNoTests
+
+      - name: Build React application
+        run: npm run build

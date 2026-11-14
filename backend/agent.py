@@ -10,18 +10,18 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
-import os
 import datetime
-import requests
+import os
 from difflib import get_close_matches
 
-from dotenv import load_dotenv
 import google.generativeai as genai
+import requests
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
-from database import SessionLocal
 import models
- 
+from database import SessionLocal
+
 load_dotenv()
 
 

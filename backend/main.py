@@ -1,19 +1,19 @@
 import datetime
 import time
 
-from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import models
 import schemas
-from database import engine, get_db
 from agent import (
     chat_with_agent,
     generate_daily_broadcast,
     generate_weekly_insights,
 )
+from database import engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
 
