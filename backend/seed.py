@@ -5,8 +5,8 @@ Creates demo health workers with 30 days of attendance history.
 import datetime
 import random
 
-from database import SessionLocal, engine, Base
 import models
+from database import Base, SessionLocal, engine
 
 Base.metadata.create_all(bind=engine)
 db = SessionLocal()

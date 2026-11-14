@@ -1,6 +1,6 @@
+from datetime import date
+
 from pydantic import BaseModel
-from datetime import date, datetime
-from typing import Optional
 
 
 class WorkerCreate(BaseModel):
@@ -22,7 +22,7 @@ class AttendanceCreate(BaseModel):
     worker_id: int
     date: date
     status: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class AttendanceOut(BaseModel):
@@ -30,7 +30,7 @@ class AttendanceOut(BaseModel):
     worker_id: int
     date: date
     status: str
-    note: Optional[str] = None
+    note: str | None = None
     marked_by: str
 
     class Config:
