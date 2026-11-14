@@ -19,7 +19,7 @@ export default function App() {
       setWorkers((prev) => (JSON.stringify(prev) === JSON.stringify(w) ? prev : w))
       setSummary((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s))
       setError(null)
-    } catch (e) {
+    } catch (_e) {
       setError('Backend se connect nahi ho pa raha. Kya uvicorn chal raha hai localhost:8000 par?')
     }
   }

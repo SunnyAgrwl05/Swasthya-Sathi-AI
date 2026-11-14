@@ -1,0 +1,11 @@
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",   # line length handled separately
+    "B008",   # FastAPI Depends in function defaults
+    "BLE001", # blind exception handling in external API calls
+    "TRY002", # custom exceptions
+    "S110",   # try-except-pass
+]
