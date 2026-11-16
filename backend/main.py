@@ -14,6 +14,7 @@ from agent import (
     generate_weekly_insights,
 )
 from database import engine, get_db
+from hallucination_detector import detect_hallucination
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -222,6 +223,13 @@ def chat(
     end_time = time.time()
     exec_time = int((end_time - start_time) * 1000)
 
+    # Perform automated hallucination and clinical safety assessment
+    check_result = detect_hallucination(
+        query=req.message,
+        response=reply,
+        context=req.context,
+    )
+
     db.add(
         models.ChatLog(
             role="agent",
@@ -235,7 +243,7 @@ def chat(
             response=reply,
             tools_used=", ".join(actions) if actions else None,
             execution_time_ms=exec_time,
-            status="Success",
+            status="Flagged" if check_result.is_flagged else "Success",
         )
     )
 
@@ -244,7 +252,22 @@ def chat(
     return schemas.ChatResponse(
         reply=reply,
         actions_taken=actions,
+        hallucination_check=schemas.HallucinationCheckOut(**check_result.to_dict()),
     )
+
+
+@app.post("/api/safety/check-hallucination", response_model=schemas.HallucinationCheckOut)
+def check_hallucination_endpoint(req: schemas.HallucinationCheckRequest):
+    """
+    Standalone endpoint to verify medical text and calculate confidence / hallucination risk.
+    """
+    result = detect_hallucination(
+        query=req.query,
+        response=req.response,
+        context=req.context,
+        retrieval_score=req.retrieval_score,
+    )
+    return schemas.HallucinationCheckOut(**result.to_dict())
 
 
 # =====================================================
