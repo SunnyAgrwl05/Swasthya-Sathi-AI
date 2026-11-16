@@ -259,3 +259,22 @@ class MedicalHallucinationDetector:
                 "has_disclaimer": has_disc,
             },
         )
+
+
+# Module singleton instance with default configurations
+default_detector = MedicalHallucinationDetector()
+
+
+def detect_hallucination(
+    query: str,
+    response: str,
+    context: Optional[str] = None,
+    retrieval_score: Optional[float] = None,
+) -> DetectionResult:
+    """Convenience helper to inspect an AI response using the default detector."""
+    return default_detector.analyze(
+        query=query,
+        response=response,
+        context=context,
+        retrieval_score=retrieval_score,
+    )
