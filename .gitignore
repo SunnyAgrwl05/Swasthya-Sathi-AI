@@ -19,4 +19,4 @@ dist/
 frontend/dist/
 
 # OS
-.DS_Store
+.DS_Store.coverage
