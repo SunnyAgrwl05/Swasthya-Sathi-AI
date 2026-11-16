@@ -155,3 +155,107 @@ class MedicalHallucinationDetector:
             return max(ratio, 0.2), reasons
 
         return min(0.3 + (ratio * 0.7), 1.0), reasons
+
+
+    def check_clinical_hedging_and_disclaimer(
+        self, response: str, is_med: bool
+    ) -> tuple[float, bool, List[str]]:
+        """Checks for professional guidance, hedging, and disclaimers in medical answers."""
+        reasons = []
+        has_disclaimer = any(p.search(response) for p in self._disclaimer_patterns)
+        has_hedging = any(p.search(response) for p in self._hedge_patterns)
+
+        modifier = 0.0
+        if is_med:
+            if has_disclaimer:
+                modifier += 0.10
+            elif self.config.require_disclaimer:
+                modifier -= 0.15
+                reasons.append("Medical response is missing a standard clinical advisory or disclaimer.")
+
+            if has_hedging:
+                modifier += 0.05
+            else:
+                modifier -= 0.05
+
+        return modifier, has_disclaimer, reasons
+
+    def analyze(
+        self,
+        query: str,
+        response: str,
+        context: Optional[str] = None,
+        retrieval_score: Optional[float] = None,
+    ) -> DetectionResult:
+        """
+        Analyzes a query/response pair and optional RAG context for hallucination signals.
+        """
+        is_med = self.is_medical_query(query, response)
+        flagged_reasons = []
+
+        # 1. Base confidence
+        base_confidence = 0.85
+
+        # 2. Context Grounding / Retrieval Confidence
+        if retrieval_score is not None:
+            grounding_score = max(0.0, min(retrieval_score, 1.0))
+            if grounding_score < 0.5:
+                flagged_reasons.append(f"Low retrieval confidence score ({grounding_score:.2f}) from knowledge base.")
+        else:
+            grounding_score, g_reasons = self.compute_context_grounding_score(response, context)
+            flagged_reasons.extend(g_reasons)
+
+        # 3. Dangerous claims penalty
+        risk_penalty, r_reasons = self.compute_claim_risk_score(response)
+        flagged_reasons.extend(r_reasons)
+
+        # 4. Hedging & Disclaimer modifier
+        disc_mod, has_disc, d_reasons = self.check_clinical_hedging_and_disclaimer(response, is_med)
+        flagged_reasons.extend(d_reasons)
+
+        # Combined Confidence Calculation
+        if context or (retrieval_score is not None):
+            weighted_conf = (0.35 * base_confidence) + (0.45 * grounding_score) - risk_penalty + disc_mod
+        else:
+            weighted_conf = base_confidence - risk_penalty + disc_mod
+
+        confidence_score = max(0.05, min(weighted_conf, 0.99))
+
+        # Risk Classification
+        if confidence_score < self.config.high_risk_threshold or risk_penalty >= 0.5:
+            risk_level = "HIGH"
+            is_flagged = True
+        elif confidence_score < self.config.flag_threshold or len(flagged_reasons) > 0:
+            risk_level = "MEDIUM"
+            is_flagged = True
+        else:
+            risk_level = "LOW"
+            is_flagged = False
+
+        # Build user-friendly warning message
+        warning_message = None
+        if is_flagged:
+            if risk_level == "HIGH":
+                warning_message = (
+                    "⚠️ Critical Advisory: This response contains unverified medical claims or unsupported advice. "
+                    "Do not make health decisions based on this output. Consult a qualified physician."
+                )
+            else:
+                warning_message = (
+                    "ℹ️ Medical Caution: This information is AI-generated and may not be fully grounded in clinical guidelines. "
+                    "Always verify with a licensed healthcare provider."
+                )
+
+        return DetectionResult(
+            is_flagged=is_flagged,
+            confidence_score=confidence_score,
+            risk_level=risk_level,
+            flagged_reasons=flagged_reasons,
+            warning_message=warning_message,
+            breakdown={
+                "is_medical_domain": is_med,
+                "grounding_score": round(grounding_score, 2),
+                "risk_penalty": round(risk_penalty, 2),
+                "has_disclaimer": has_disc,
+            },
+        )
