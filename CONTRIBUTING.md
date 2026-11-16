@@ -41,25 +41,47 @@ On Windows PowerShell, activate the backend virtual environment with:
 ## Branch Workflow
 
 1. Fork the repository.
-2. Sync your fork with the upstream `main` branch.
-3. Create a descriptive branch:
-
-```bash
-git checkout -b docs/research-ready-repo
-```
-
+2. Add the upstream remote and fetch:
+   ```bash
+   git remote add upstream https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI.git
+   git fetch upstream
+   ```
+3. **Always cut your branch from `upstream/main`** (never from your fork's `main`):
+   ```bash
+   git checkout -b feat/your-feature upstream/main
+   ```
 4. Make the smallest complete change that solves the assigned issue.
-5. Run relevant checks.
+5. Run relevant checks (see [Testing Checklist](#testing-checklist)).
 6. Open a pull request against the upstream `main` branch.
+
+Branch naming convention:
+
+| Prefix | When to use |
+|---|---|
+| `feat/` | New feature |
+| `fix/` | Bug fix |
+| `docs/` | Documentation only |
+| `test/` | Test additions / improvements |
+| `refactor/` | Code restructuring, no behaviour change |
+| `chore/` | Tooling, CI, dependencies |
 
 ## Commit and PR Guidelines
 
-Use clear commit messages:
+Use [Conventional Commits](https://www.conventionalcommits.org/) for commit messages:
 
+```
+<type>(<scope>): <short summary>
+```
+
+**Types**: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `perf`  
+**Scopes**: `ai`, `backend`, `frontend`, `api`, `db`, `ci`
+
+Examples:
 ```text
-docs: add research methodology guide
-fix: handle missing attendance summary data
-test: cover worker listing endpoint
+feat(ai): add hallucination detection engine (closes #14)
+fix(backend): handle duplicate worker_code gracefully
+docs: improve contributor onboarding guide (closes #21)
+test(backend): add pytest suite for attendance API
 ```
 
 Every PR should include:
@@ -78,7 +100,7 @@ Backend:
 
 ```bash
 cd backend
-pytest
+python -m pytest -v
 ```
 
 Frontend:
