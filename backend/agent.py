@@ -434,6 +434,40 @@ def generate_daily_broadcast() -> str:
     finally:
         db.close()
 
+
+def consult_medical_guidelines(topic: str) -> str:
+    """Consults verified Indian public health protocols and guidelines for
+    immunization schedules, maternal care (ANC), childhood illnesses (IMNCI),
+    and ASHA/ANM field duties. Use this whenever the supervisor asks a medical,
+    immunization, disease, or clinical protocol question.
+
+    Args:
+        topic: The disease, vaccine, pregnancy protocol, or public health topic.
+    """
+    from knowledge.rag_service import get_health_knowledge_base
+
+    kb = get_health_knowledge_base()
+    results = kb.search(topic, top_k=2)
+
+    if not results:
+        return (
+            f"No specific national guideline found matching '{topic}'. "
+            "Please advise the supervisor to consult the Primary Health Centre (PHC) Medical Officer."
+        )
+
+    _actions_taken.append(f"Retrieved verified health guideline: {results[0]['section_title']}")
+
+    formatted = []
+    for r in results:
+        formatted.append(
+            f"📖 {r['document_title']} — {r['section_title']}\n"
+            f"{r['content']}\n"
+            f"(Source: {r['source_file']})"
+        )
+
+    return "\n\n---\n\n".join(formatted)
+
+
 SYSTEM_INSTRUCTION = """
 You are Swasthya Sathi AI.
 
@@ -455,6 +489,7 @@ YOUR CAPABILITIES
 • Generate weekly insights
 • Generate daily operational reports
 • Identify workers requiring follow-up
+• Consult verified public health, immunization, and maternal care guidelines
 • Answer general knowledge questions when unrelated to attendance
 
 ====================================================
@@ -473,6 +508,18 @@ Never assume data.
 
 If a worker cannot be found,
 politely inform the supervisor.
+
+====================================================
+
+FOR MEDICAL & PUBLIC HEALTH QUESTIONS
+
+Always use the consult_medical_guidelines tool.
+
+Never invent vaccine schedules, drug doses, or medical treatments.
+
+Always ground advice in the retrieved guideline text.
+
+Always finish with a clear recommendation that clinical decisions must be confirmed by the PHC Medical Officer.
 
 ====================================================
 
@@ -875,6 +922,7 @@ TOOLS = [
     who_has_not_marked_today,
     generate_daily_broadcast,
     generate_weekly_insights,
+    consult_medical_guidelines,
 ]
 
 

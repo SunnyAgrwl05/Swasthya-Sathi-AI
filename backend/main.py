@@ -284,3 +284,20 @@ def weekly_insights_post(request: WeeklyInsightsRequest):
             language=request.language
         )
     }
+
+
+# =====================================================
+# PUBLIC HEALTH KNOWLEDGE BASE (RAG)
+# =====================================================
+
+@app.get("/api/knowledge/search")
+def search_knowledge(q: str = ""):
+    from knowledge.rag_service import get_health_knowledge_base
+
+    if not q.strip():
+        return {"query": q, "results": []}
+
+    kb = get_health_knowledge_base()
+    results = kb.search(q, top_k=3)
+    return {"query": q, "results": results}
+
