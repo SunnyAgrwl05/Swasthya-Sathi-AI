@@ -14,6 +14,7 @@ from agent import (
     generate_weekly_insights,
 )
 from database import engine, get_db
+from hallucination_detector import MedicalAuditResult, detector
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -22,6 +23,11 @@ app = FastAPI(
     version="1.0.0",
 )
 class WeeklyInsightsRequest(BaseModel):
+    language: str = "hi"
+
+class MedicalAuditRequest(BaseModel):
+    query: str
+    response: str
     language: str = "hi"
 
 app.add_middleware(
@@ -284,3 +290,12 @@ def weekly_insights_post(request: WeeklyInsightsRequest):
             language=request.language
         )
     }
+
+
+@app.post("/api/ai/audit-medical", response_model=MedicalAuditResult)
+def audit_medical_response(request: MedicalAuditRequest):
+    return detector.audit_response(
+        query=request.query,
+        response=request.response,
+        language=request.language,
+    )
