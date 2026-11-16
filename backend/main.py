@@ -1,8 +1,10 @@
 import datetime
+import json
 import time
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,7 @@ from agent import (
     generate_daily_broadcast,
     generate_weekly_insights,
 )
-from database import engine, get_db
+from database import SessionLocal, engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -245,6 +247,53 @@ def chat(
         reply=reply,
         actions_taken=actions,
     )
+
+
+@app.post("/api/chat/stream")
+def chat_stream(
+    req: schemas.ChatRequest,
+    db: Session = Depends(get_db),
+):
+    db.add(
+        models.ChatLog(
+            role="user",
+            message=req.message,
+        )
+    )
+    db.commit()
+
+    def event_generator():
+        start_time = time.time()
+        reply, actions = chat_with_agent(req.message)
+        exec_time = int((time.time() - start_time) * 1000)
+
+        db_session = SessionLocal()
+        try:
+            db_session.add(models.ChatLog(role="agent", message=reply))
+            db_session.add(
+                models.AgentLog(
+                    query=req.message,
+                    response=reply,
+                    tools_used=", ".join(actions) if actions else None,
+                    execution_time_ms=exec_time,
+                    status="Success",
+                )
+            )
+            db_session.commit()
+        finally:
+            db_session.close()
+
+        if actions:
+            yield f"data: {json.dumps({'type': 'actions', 'actions': actions})}\n\n"
+
+        words = reply.split(" ")
+        for i, word in enumerate(words):
+            chunk = word + (" " if i < len(words) - 1 else "")
+            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done', 'reply': reply, 'actions': actions})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # =====================================================
