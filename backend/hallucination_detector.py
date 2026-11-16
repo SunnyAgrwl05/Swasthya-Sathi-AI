@@ -58,3 +58,46 @@ class HallucinationDetectorConfig:
             if require_disclaimer is not None
             else os.getenv("HALLUCINATION_REQUIRE_DISCLAIMER", "true").lower() in ("true", "1", "yes")
         )
+
+
+# Patterns indicating clinical/medical queries and risky/unsubstantiated claims
+MEDICAL_KEYWORDS = [
+    r"\bmedicin(e|es|ation)\b", r"\bdos(e|age|ing)\b", r"\btablet(s)?\b", r"\bsyrup\b",
+    r"\binjection\b", r"\btreatment\b", r"\bsymptom(s)?\b", r"\bdisease\b",
+    r"\binfection\b", r"\bfever\b", r"\bpain\b", r"\bcough\b", r"\bcure\b",
+    r"\bprescri(be|ption)\b", r"\bdiagnosis\b", r"\bbp\b", r"\bblood pressure\b",
+    r"\bdiabetes\b", r"\bpregnant|pregnancy\b", r"\bvaccin(e|ation)\b",
+    r"\bdawa\b", r"\bilaj\b", r"\bbimari\b", r"\bbukhar\b", r"\bdard\b"
+]
+
+RISKY_PHRASES = [
+    r"\b100%\s*(guarantee|cure|safe|effective)\b",
+    r"\binstant(ly)?\s*cures?\b",
+    r"\bmiracle\s*(cure|drug|treatment)\b",
+    r"\bno\s*side\s*effects?\s*whatsoever\b",
+    r"\bdefinitely\s*cures?\b",
+    r"\bcompletely\s*safe\s*for\s*everyone\b",
+    r"\bno\s*need\s*to\s*(consult|see)\s*a?\s*doctor\b",
+    r"\bstop\s*(taking\s*)?your\s*prescribed\b",
+    r"\btake\s*\d+\s*(tablets?|pills?|spoons?)\s*every\s*(hour|minute)\b",
+    r"\bexact\s*dose:\s*\d+\s*mg\b"
+]
+
+HEDGING_KEYWORDS = [
+    r"\bconsult\s*(a\s*)?(physician|doctor|healthcare\s*provider|specialist)\b",
+    r"\bmay\s*indicat(e|ing)\b",
+    r"\bpossible\s*(cause|symptom|reason)\b",
+    r"\bgeneral\s*(guidance|information)\b",
+    r"\btypical(ly)?\b",
+    r"\bseek\s*(immediate\s*)?medical\s*(attention|advice)\b",
+    r"\bdaktar\s*se\s*salah\b",
+    r"\bchikitshak\b"
+]
+
+DISCLAIMER_KEYWORDS = [
+    r"\bnot\s*(a\s*)?(substitute\s*for|replacement\s*for)\s*(professional\s*)?medical\s*advice\b",
+    r"\bconsult\s*(your\s*)?(doctor|physician|healthcare\s*professional)\b",
+    r"\bfor\s*informational\s*purposes\s*only\b",
+    r"\bemergency\b",
+    r"\bmedical\s*disclaimer\b"
+]
