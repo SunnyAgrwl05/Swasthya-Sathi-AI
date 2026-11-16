@@ -14,6 +14,7 @@ from agent import (
     generate_weekly_insights,
 )
 from database import engine, get_db
+from rag import RAGRetrievalResult, rag_engine
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -23,6 +24,10 @@ app = FastAPI(
 )
 class WeeklyInsightsRequest(BaseModel):
     language: str = "hi"
+
+class RAGQueryRequest(BaseModel):
+    query: str
+    top_k: int = 2
 
 app.add_middleware(
     CORSMiddleware,
@@ -284,3 +289,8 @@ def weekly_insights_post(request: WeeklyInsightsRequest):
             language=request.language
         )
     }
+
+
+@app.post("/api/rag/query", response_model=RAGRetrievalResult)
+def rag_query(request: RAGQueryRequest):
+    return rag_engine.retrieve(query=request.query, top_k=request.top_k)
