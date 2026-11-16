@@ -161,15 +161,16 @@ def analytics_summary(
     days: int = 30,
     db: Session = Depends(get_db),
 ):
-
-    since = datetime.date.today() - datetime.timedelta(days=days)
+    today = datetime.date.today()
+    since = today - datetime.timedelta(days=days)
+    this_week_start = today - datetime.timedelta(days=7)
+    last_week_start = today - datetime.timedelta(days=14)
 
     workers = db.query(models.HealthWorker).all()
 
     result = []
 
     for w in workers:
-
         records = [r for r in w.records if r.date >= since]
 
         present = sum(
@@ -182,6 +183,28 @@ def analytics_summary(
 
         pct = round((present / total) * 100, 1) if total else 0
 
+        # Week-over-week trend computation
+        this_week_records = [r for r in w.records if this_week_start <= r.date <= today]
+        last_week_records = [r for r in w.records if last_week_start <= r.date < this_week_start]
+
+        this_week_pct = round(
+            sum(1 for r in this_week_records if r.status == "present") / len(this_week_records) * 100, 1
+        ) if this_week_records else None
+
+        last_week_pct = round(
+            sum(1 for r in last_week_records if r.status == "present") / len(last_week_records) * 100, 1
+        ) if last_week_records else None
+
+        if this_week_pct is not None and last_week_pct is not None:
+            change_pct = round(this_week_pct - last_week_pct, 1)
+            trend = "up" if change_pct > 0 else "down" if change_pct < 0 else "flat"
+        elif this_week_pct is not None:
+            change_pct = 0.0
+            trend = "flat"
+        else:
+            change_pct = 0.0
+            trend = "flat"
+
         result.append(
             {
                 "worker_id": w.id,
@@ -191,6 +214,10 @@ def analytics_summary(
                 "present": present,
                 "total_logged": total,
                 "attendance_pct": pct,
+                "this_week_pct": this_week_pct,
+                "last_week_pct": last_week_pct,
+                "change_pct": change_pct,
+                "trend": trend,
             }
         )
 

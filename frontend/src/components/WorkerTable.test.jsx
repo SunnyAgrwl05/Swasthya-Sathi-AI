@@ -85,4 +85,30 @@ describe("WorkerTable", () => {
     expect(within(table).getByText("Kajal Kumari")).toBeInTheDocument();
     expect(within(table).getByText("Ravi Kumar")).toBeInTheDocument();
   });
+
+  it("renders week-over-week trend arrows and tooltips", () => {
+    const trendSummary = [
+      {
+        worker_id: 1,
+        attendance_pct: 92,
+        trend: "up",
+        change_pct: 12.5,
+        this_week_pct: 95.0,
+        last_week_pct: 82.5,
+      },
+      {
+        worker_id: 2,
+        attendance_pct: 55,
+        trend: "down",
+        change_pct: -16.7,
+        this_week_pct: 50.0,
+        last_week_pct: 66.7,
+      },
+    ];
+
+    render(<WorkerTable workers={workers} summary={trendSummary} />);
+
+    expect(screen.getByLabelText("Trending up by 12.5%")).toBeInTheDocument();
+    expect(screen.getByLabelText("Trending down by -16.7%")).toBeInTheDocument();
+  });
 });

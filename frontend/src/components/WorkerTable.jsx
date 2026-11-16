@@ -49,11 +49,19 @@ function WorkerTable({
       workers.map((worker) => {
         const stats = byId[worker.id];
         const pct = stats?.attendance_pct ?? 0;
+        const trend = stats?.trend ?? "flat";
+        const changePct = stats?.change_pct ?? 0;
+        const thisWeekPct = stats?.this_week_pct;
+        const lastWeekPct = stats?.last_week_pct;
         const status = badge(pct);
 
         return {
           worker,
           pct,
+          trend,
+          changePct,
+          thisWeekPct,
+          lastWeekPct,
           status,
           center: worker.center || "—",
         };
@@ -225,7 +233,7 @@ function WorkerTable({
           </thead>
 
           <tbody>
-            {filteredRows.map(({ worker, pct, status, center }) => {
+            {filteredRows.map(({ worker, pct, trend, changePct, thisWeekPct, lastWeekPct, status, center }) => {
               return (
                 <tr
                   key={worker.id}
@@ -244,9 +252,38 @@ function WorkerTable({
                   </td>
 
                   <td className="py-3 px-2">
-                    <span className="font-semibold text-cyan-300">
-                      {pct}%
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-cyan-300">
+                        {pct}%
+                      </span>
+                      {trend === "up" && (
+                        <span
+                          className="inline-flex items-center text-xs text-emerald-400 font-bold cursor-help"
+                          title={`Week-over-week: +${changePct}% (Last week: ${lastWeekPct ?? 0}% → This week: ${thisWeekPct ?? 0}%)`}
+                          aria-label={`Trending up by ${changePct}%`}
+                        >
+                          ↑
+                        </span>
+                      )}
+                      {trend === "down" && (
+                        <span
+                          className="inline-flex items-center text-xs text-rose-400 font-bold cursor-help"
+                          title={`Week-over-week: ${changePct}% (Last week: ${lastWeekPct ?? 0}% → This week: ${thisWeekPct ?? 0}%)`}
+                          aria-label={`Trending down by ${changePct}%`}
+                        >
+                          ↓
+                        </span>
+                      )}
+                      {trend === "flat" && changePct === 0 && (
+                        <span
+                          className="inline-flex items-center text-xs text-white/30 font-bold cursor-help"
+                          title="Week-over-week: unchanged"
+                          aria-label="Attendance unchanged"
+                        >
+                          →
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="py-3 px-2">
