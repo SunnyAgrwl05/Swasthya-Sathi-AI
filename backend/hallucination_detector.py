@@ -101,3 +101,57 @@ DISCLAIMER_KEYWORDS = [
     r"\bemergency\b",
     r"\bmedical\s*disclaimer\b"
 ]
+
+
+class MedicalHallucinationDetector:
+    """
+    Detector that analyzes an AI medical response against context and clinical safety rules.
+    """
+
+    def __init__(self, config: Optional[HallucinationDetectorConfig] = None):
+        self.config = config or HallucinationDetectorConfig()
+        self._med_patterns = [re.compile(p, re.IGNORECASE) for p in MEDICAL_KEYWORDS]
+        self._risky_patterns = [re.compile(p, re.IGNORECASE) for p in RISKY_PHRASES]
+        self._hedge_patterns = [re.compile(p, re.IGNORECASE) for p in HEDGING_KEYWORDS]
+        self._disclaimer_patterns = [re.compile(p, re.IGNORECASE) for p in DISCLAIMER_KEYWORDS]
+
+    def is_medical_query(self, query: str, response: str) -> bool:
+        """Determines if either query or response involves clinical/health domain advice."""
+        combined = f"{query} {response}"
+        return any(p.search(combined) for p in self._med_patterns)
+
+    def compute_claim_risk_score(self, response: str) -> tuple[float, List[str]]:
+        """Scans for unsupported/dangerous claims and returns a penalty deduction and reasons."""
+        penalty = 0.0
+        reasons = []
+        for p in self._risky_patterns:
+            matches = p.findall(response)
+            if matches:
+                penalty += 0.35
+                reasons.append(f"Unsubstantiated or dangerous absolute claim detected: '{p.pattern}'")
+        return min(penalty, 0.85), reasons
+
+    def compute_context_grounding_score(self, response: str, context: Optional[str]) -> tuple[float, List[str]]:
+        """
+        Evaluates lexical overlap and grounding when reference context is provided (e.g. RAG docs).
+        """
+        if not context or not context.strip():
+            # If no context is expected/provided, assume baseline neutral score
+            return 0.75, []
+
+        reasons = []
+        # Token overlap analysis
+        resp_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", response.lower()))
+        ctx_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", context.lower()))
+
+        if not resp_words:
+            return 0.5, ["Response contains insufficient substantive words for grounding."]
+
+        overlap = resp_words.intersection(ctx_words)
+        ratio = len(overlap) / len(resp_words)
+
+        if ratio < 0.20:
+            reasons.append(f"Low semantic overlap ({ratio:.1%}) with verified clinical context/RAG sources.")
+            return max(ratio, 0.2), reasons
+
+        return min(0.3 + (ratio * 0.7), 1.0), reasons
