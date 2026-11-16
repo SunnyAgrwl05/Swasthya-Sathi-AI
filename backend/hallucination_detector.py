@@ -71,16 +71,17 @@ MEDICAL_KEYWORDS = [
 ]
 
 RISKY_PHRASES = [
-    r"\b100%\s*(guarantee|cure|safe|effective)\b",
-    r"\binstant(ly)?\s*cures?\b",
-    r"\bmiracle\s*(cure|drug|treatment)\b",
-    r"\bno\s*side\s*effects?\s*whatsoever\b",
-    r"\bdefinitely\s*cures?\b",
-    r"\bcompletely\s*safe\s*for\s*everyone\b",
-    r"\bno\s*need\s*to\s*(consult|see)\s*a?\s*doctor\b",
-    r"\bstop\s*(taking\s*)?your\s*prescribed\b",
-    r"\btake\s*\d+\s*(tablets?|pills?|spoons?)\s*every\s*(hour|minute)\b",
-    r"\bexact\s*dose:\s*\d+\s*mg\b"
+    r"100%\s*(guarantee[s]?|cure[s]?|safe|effective)",
+    r"instant(ly)?\s*cure[s]?",
+    r"cure[s]?\s+\w+\s+instantly",
+    r"miracle\s*(cure|drug|treatment)",
+    r"no\s*side\s*effects?",
+    r"definitely\s*cure[s]?",
+    r"completely\s*safe\s*for\s*everyone",
+    r"no\s*need\s*to\s*(consult|see)\s*a?\s*doctor",
+    r"stop\s*(taking\s*)?your\s*prescribed",
+    r"take\s*\d+\s*(tablets?|pills?|spoons?)\s*every\s*(hour|minute)",
+    r"exact\s*dose:\s*\d+\s*mg"
 ]
 
 HEDGING_KEYWORDS = [
@@ -140,9 +141,13 @@ class MedicalHallucinationDetector:
             return 0.75, []
 
         reasons = []
-        # Token overlap analysis
-        resp_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", response.lower()))
-        ctx_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", context.lower()))
+        # Remove common functional stopwords before comparing content overlap
+        stopwords = {
+            "this", "that", "with", "from", "your", "should", "take", "adults",
+            "every", "hours", "hour", "have", "about", "what", "when", "where"
+        }
+        resp_words = {w for w in re.findall(r"\b[a-zA-Z]{4,}\b", response.lower()) if w not in stopwords}
+        ctx_words = {w for w in re.findall(r"\b[a-zA-Z]{4,}\b", context.lower()) if w not in stopwords}
 
         if not resp_words:
             return 0.5, ["Response contains insufficient substantive words for grounding."]
@@ -150,9 +155,9 @@ class MedicalHallucinationDetector:
         overlap = resp_words.intersection(ctx_words)
         ratio = len(overlap) / len(resp_words)
 
-        if ratio < 0.20:
+        if ratio < 0.25:
             reasons.append(f"Low semantic overlap ({ratio:.1%}) with verified clinical context/RAG sources.")
-            return max(ratio, 0.2), reasons
+            return min(ratio, 0.35), reasons
 
         return min(0.3 + (ratio * 0.7), 1.0), reasons
 
@@ -222,7 +227,7 @@ class MedicalHallucinationDetector:
         confidence_score = max(0.05, min(weighted_conf, 0.99))
 
         # Risk Classification
-        if confidence_score < self.config.high_risk_threshold or risk_penalty >= 0.5:
+        if confidence_score < self.config.high_risk_threshold or risk_penalty >= 0.35:
             risk_level = "HIGH"
             is_flagged = True
         elif confidence_score < self.config.flag_threshold or len(flagged_reasons) > 0:
