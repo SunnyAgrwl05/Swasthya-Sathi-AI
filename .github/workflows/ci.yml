@@ -48,7 +48,7 @@ jobs:
         run: python -m compileall -q .
 
       - name: Run backend tests
-        run: pytest -v
+        run: pytest -v --cov=. --cov-report=term
 
       - name: Verify FastAPI application startup
         shell: bash
