@@ -66,16 +66,75 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 _actions_taken: list[str] = []
 
 
-def _resolve_worker(db: Session, name: str):
-    """Fuzzy-match a spoken/typed worker name to a DB row."""
+def _resolve_worker(db: Session, name: str, center: str | None = None):
+    """Fuzzy-match a spoken/typed worker name to a DB row, disambiguating by center if needed.
+
+    Returns:
+        - HealthWorker instance if uniquely resolved.
+        - None if no matching worker found.
+        - Clarification error string if multiple workers share the name and center is ambiguous.
+    """
     workers = db.query(models.HealthWorker).all()
     if not workers:
         return None
-    names = {w.name.lower(): w for w in workers}
-    if name.lower() in names:
-        return names[name.lower()]
-    match = get_close_matches(name.lower(), names.keys(), n=1, cutoff=0.6)
-    return names[match[0]] if match else None
+
+    # Group workers by lowercase name
+    by_name: dict[str, list[models.HealthWorker]] = {}
+    for w in workers:
+        by_name.setdefault(w.name.lower().strip(), []).append(w)
+
+    clean_name = name.lower().strip()
+    candidates: list[models.HealthWorker] = []
+
+    # 1. Exact match on full name
+    if clean_name in by_name:
+        candidates = by_name[clean_name]
+    else:
+        # 2. Check if clean_name contains both a worker name and a center (e.g. "Pooja Singh Danapur")
+        found = False
+        for known_name, w_list in by_name.items():
+            if known_name in clean_name:
+                candidates = w_list
+                found = True
+                if not center:
+                    remainder = clean_name.replace(known_name, "").replace(" at ", " ").replace(" in ", " ").strip()
+                    if remainder:
+                        center = remainder
+                break
+
+        if not found:
+            # 3. Fuzzy match across known worker names
+            match = get_close_matches(clean_name, by_name.keys(), n=1, cutoff=0.6)
+            if match:
+                candidates = by_name[match[0]]
+
+    if not candidates:
+        return None
+
+    # If only 1 worker matches, return directly
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Multiple workers share the same name -> disambiguate by center
+    if center:
+        clean_center = center.lower().strip()
+        center_matches = [
+            w for w in candidates
+            if clean_center in (w.center or "").lower() or (w.center and w.center.lower() in clean_center)
+        ]
+        if len(center_matches) == 1:
+            return center_matches[0]
+        if not center_matches:
+            # Fuzzy match candidate centers
+            cand_centers = {w.center.lower(): w for w in candidates if w.center}
+            matched_c = get_close_matches(clean_center, cand_centers.keys(), n=1, cutoff=0.5)
+            if matched_c:
+                return cand_centers[matched_c[0]]
+
+    # Ambiguity cannot be resolved: return explicit clarification message
+    display_name = candidates[0].name
+    centers_str = ", ".join(w.center for w in candidates if w.center) or "unknown centers"
+    return f"Multiple workers found for '{display_name}' ({centers_str}). Please specify the center."
 
 
 def _parse_date(date_str: str | None) -> datetime.date:
@@ -95,7 +154,7 @@ def _parse_date(date_str: str | None) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
-def mark_attendance(worker_name: str, status: str, date_str: str = "today", note: str = "") -> str:
+def mark_attendance(worker_name: str, status: str, date_str: str = "today", note: str = "", center: str = "") -> str:
     """Marks attendance for a health worker on a given date.
 
     Args:
@@ -103,11 +162,15 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
         status: One of 'present', 'absent', 'half-day', 'leave'.
         date_str: Date in YYYY-MM-DD, or 'today' / 'yesterday'.
         note: Optional short remark, e.g. reason for absence.
+        center: Optional center/PHC name to disambiguate workers sharing the same name.
     """
     db = SessionLocal()
 
     try:
-        worker = _resolve_worker(db, worker_name)
+        worker = _resolve_worker(db, worker_name, center=center)
+
+        if isinstance(worker, str):
+            return worker
 
         if not worker:
             return (
@@ -177,20 +240,23 @@ Ensure all worker details are complete for comprehensive reporting.
         db.close()
 
 
-def get_attendance_summary(worker_name: str = "", days: int = 30) -> str:
+def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = "") -> str:
     """Gets an attendance summary (present/absent/half-day/leave counts) for one worker
     or, if worker_name is empty, for every worker, over the last N days.
 
     Args:
         worker_name: Worker name, or leave blank for all workers.
         days: Lookback window in days (default 30).
+        center: Optional center/PHC name to disambiguate workers sharing the same name.
     """
     db = SessionLocal()
     try:
         since = datetime.date.today() - datetime.timedelta(days=days)
         query = db.query(models.HealthWorker)
         if worker_name:
-            w = _resolve_worker(db, worker_name)
+            w = _resolve_worker(db, worker_name, center=center)
+            if isinstance(w, str):
+                return w
             if not w:
                 return f"No health worker found matching '{worker_name}'."
             query = query.filter(models.HealthWorker.id == w.id)
@@ -370,7 +436,8 @@ def generate_daily_broadcast() -> str:
             r for r in db.query(models.AttendanceRecord).filter_by(date=today).all()
         ]
         present_today = sum(1 for r in marked_today if r.status == "present")
-        missing = [w.name for w in workers if w.id not in {r.worker_id for r in marked_today}]
+        marked_ids = {r.worker_id for r in marked_today}
+        missing_workers = [w for w in workers if w.id not in marked_ids]
 
         since = today - datetime.timedelta(days=30)
         flagged = []
@@ -387,33 +454,28 @@ def generate_daily_broadcast() -> str:
             f"Present today: {present_today}/{total}",
         ]
 
-        if missing:
+        if missing_workers:
             lines.append("")
-            lines.append(f"📋 Pending Attendance ({len(missing)} Workers)")
+            lines.append(f"📋 Pending Attendance ({len(missing_workers)} Workers)")
             lines.append("")
 
-            for worker in workers:
-                if worker.name in missing:
-                    lines.append(f"• {worker.name}")
-                    lines.append(f"  {worker.role}")
-                    lines.append(f"  {worker.center}")
-                    lines.append("")
+            for worker in missing_workers:
+                lines.append(f"• {worker.name}")
+                lines.append(f"  {worker.role}")
+                lines.append(f"  {worker.center}")
+                lines.append("")
 
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
             lines.append("")
 
             for worker in workers:
+                records = [r for r in worker.records if r.date >= since]
+                if not records:
+                    continue
                 pct = round(
-                    sum(
-                        1
-                        for r in worker.records
-                        if r.date >= since and r.status == "present"
-                    )
-                    / max(
-                        1,
-                        len([r for r in worker.records if r.date >= since]),
-                    )
+                    sum(1 for r in records if r.status == "present")
+                    / len(records)
                     * 100,
                     1,
                 )
