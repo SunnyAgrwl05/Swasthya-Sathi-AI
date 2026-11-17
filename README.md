@@ -202,18 +202,35 @@ The backend can run for basic API and test workflows without an AI key, but AI c
 
 ## Testing
 
-Backend:
+The test suites validate backend business logic, database operations, FastAPI endpoints, frontend React components, API communication services, and PDF Unicode export pipelines.
+
+### Backend Tests (Pytest)
 
 ```bash
 cd backend
-pytest
+pytest -v
 ```
 
-Frontend:
+### Frontend Tests (Vitest & React Testing Library)
+
+The frontend test suite is powered by **Vitest** and **@testing-library/react** with **v8 coverage** and isolated API mocks:
 
 ```bash
 cd frontend
+
+# Run complete test suite once
 npm test
+
+# Run tests in interactive watch mode
+npm run test:watch
+
+# Generate code coverage report (text, JSON, HTML)
+npm run test:coverage
+
+# Run ESLint linter
+npm run lint
+
+# Verify production Vite build
 npm run build
 ```
 

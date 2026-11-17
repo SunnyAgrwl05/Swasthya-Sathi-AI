@@ -3,20 +3,26 @@
 backend/.env
 frontend/.env
 
-# Python
+# Python & Database
 venv/
 backend/venv/
 __pycache__/
 backend/__pycache__/
 *.pyc
+*.db
 
 # Node
 node_modules/
 frontend/node_modules/
 
-# Build
+# Build & Test
 dist/
 frontend/dist/
+coverage/
+frontend/coverage/
+.pytest_cache/
 
 # OS
 .DS_Store.coverage
+.DS_Store
+* 2.*
