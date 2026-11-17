@@ -12,8 +12,10 @@ async function req(path, options = {}) {
 export const api = {
   getWorkers: () => req('/api/workers'),
   getSummary: (days = 30) => req(`/api/analytics/summary?days=${days}`),
-  sendChat: (message, context = null) =>
-    req('/api/chat', { method: 'POST', body: JSON.stringify({ message, context }) }),
+  sendChat: (message, context = null) => {
+    const payload = context ? { message, context } : { message }
+    return req('/api/chat', { method: 'POST', body: JSON.stringify(payload) })
+  },
   checkHallucination: (query, response, context = null, retrieval_score = null) =>
     req('/api/safety/check-hallucination', {
       method: 'POST',
@@ -27,6 +29,17 @@ export const api = {
             language,
         }),
     }),
+  getWorker: (id) => req(`/api/workers/${id}`),
+  updateWorker: (id, data) =>
+    req(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  exportAttendanceCSVUrl: (filters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.worker_id) params.append('worker_id', filters.worker_id)
+    if (filters.status && filters.status !== 'All') params.append('status', filters.status.toLowerCase())
+    if (filters.center && filters.center !== 'All') params.append('center', filters.center)
+    const qs = params.toString()
+    return `${BASE}/api/attendance/export-csv${qs ? `?${qs}` : ''}`
+  },
 }
 
 

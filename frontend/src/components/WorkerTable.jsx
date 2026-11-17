@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from "react";
+import { api } from "../api";
 
 function badge(pct) {
   if (pct >= 85) {
@@ -119,8 +120,22 @@ function WorkerTable({
           </p>
         </div>
 
-        <div className="text-xs text-cyan-300 font-medium">
-          {filteredRows.length} of {workers.length} Registered Workers
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-cyan-300 font-medium">
+            {filteredRows.length} of {workers.length} Registered Workers
+          </span>
+          <a
+            href={api.exportAttendanceCSVUrl({
+              status: statusFilter,
+              center: centerFilter,
+            })}
+            download="swasthya_attendance_report.csv"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-300 transition hover:bg-cyan-500/20 hover:border-cyan-400/50"
+            title="Download attendance records as CSV"
+          >
+            <span>📥</span>
+            <span>Export CSV</span>
+          </a>
         </div>
       </div>
 

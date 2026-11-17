@@ -1,8 +1,11 @@
+import csv
 import datetime
+import io
 import time
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -65,6 +68,56 @@ def create_worker(worker: schemas.WorkerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_worker)
     return db_worker
+
+
+@app.get("/api/workers/{worker_id}", response_model=schemas.WorkerDetailOut)
+def get_worker(worker_id: int, db: Session = Depends(get_db)):
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    recent = (
+        db.query(models.AttendanceRecord)
+        .filter_by(worker_id=worker_id)
+        .order_by(models.AttendanceRecord.date.desc())
+        .limit(30)
+        .all()
+    )
+
+    return schemas.WorkerDetailOut(
+        id=worker.id,
+        worker_code=worker.worker_code,
+        name=worker.name,
+        role=worker.role,
+        center=worker.center,
+        phone=worker.phone,
+        total_attendance_records=len(worker.records),
+        recent_attendance=recent,
+    )
+
+
+@app.put("/api/workers/{worker_id}", response_model=schemas.WorkerOut)
+def update_worker(
+    worker_id: int,
+    worker_update: schemas.WorkerUpdate,
+    db: Session = Depends(get_db),
+):
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    if worker_update.name is not None:
+        worker.name = worker_update.name
+    if worker_update.role is not None:
+        worker.role = worker_update.role
+    if worker_update.center is not None:
+        worker.center = worker_update.center
+    if worker_update.phone is not None:
+        worker.phone = worker_update.phone
+
+    db.commit()
+    db.refresh(worker)
+    return worker
 
 
 @app.delete("/api/workers/{worker_id}")
@@ -150,6 +203,71 @@ def create_attendance(
     db.refresh(db_record)
 
     return db_record
+
+
+@app.get("/api/attendance/export-csv")
+@app.get("/api/reports/export-csv")
+def export_attendance_csv(
+    worker_id: int | None = None,
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+    status: str | None = None,
+    center: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Export attendance logs as RFC-4180 compliant CSV stream with optional filters."""
+    q = db.query(models.AttendanceRecord).join(models.HealthWorker)
+
+    if worker_id:
+        q = q.filter(models.AttendanceRecord.worker_id == worker_id)
+    if start_date:
+        q = q.filter(models.AttendanceRecord.date >= start_date)
+    if end_date:
+        q = q.filter(models.AttendanceRecord.date <= end_date)
+    if status:
+        q = q.filter(models.AttendanceRecord.status == status)
+    if center:
+        q = q.filter(models.HealthWorker.center == center)
+
+    records = q.order_by(models.AttendanceRecord.date.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "Worker Code",
+        "Worker Name",
+        "Role",
+        "Health Center",
+        "Phone",
+        "Date",
+        "Status",
+        "Note",
+        "Marked By",
+    ])
+
+    for r in records:
+        w = r.worker
+        writer.writerow([
+            w.worker_code if w else "",
+            w.name if w else "",
+            w.role if w else "",
+            w.center if w else "",
+            w.phone if w else "",
+            r.date.isoformat(),
+            r.status,
+            r.note or "",
+            r.marked_by or "",
+        ])
+
+    csv_data = output.getvalue()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="swasthya_attendance_report.csv"',
+            "Content-Type": "text/csv; charset=utf-8",
+        },
+    )
 
 
 # =====================================================

@@ -105,4 +105,38 @@ describe("api service", () => {
 
     await expect(api.getWorkers()).rejects.toThrow("API error 500");
   });
+
+  it("getWorker fetches /api/workers/:id", async () => {
+    const mockWorker = { id: 1, name: "Anita Devi" };
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockWorker,
+    });
+
+    const res = await api.getWorker(1);
+    expect(global.fetch).toHaveBeenCalledWith("/api/workers/1", {
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(res).toEqual(mockWorker);
+  });
+
+  it("updateWorker sends PUT to /api/workers/:id", async () => {
+    const payload = { name: "Updated Name" };
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 1, ...payload }),
+    });
+
+    await api.updateWorker(1, payload);
+    expect(global.fetch).toHaveBeenCalledWith("/api/workers/1", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  });
+
+  it("exportAttendanceCSVUrl builds valid CSV download query", () => {
+    const url = api.exportAttendanceCSVUrl({ status: "present", center: "Patna PHC" });
+    expect(url).toContain("/api/attendance/export-csv?status=present&center=Patna+PHC");
+  });
 });

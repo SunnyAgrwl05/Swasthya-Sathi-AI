@@ -18,6 +18,13 @@ class WorkerOut(WorkerCreate):
         from_attributes = True
 
 
+class WorkerUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    center: str | None = None
+    phone: str | None = None
+
+
 class AttendanceCreate(BaseModel):
     worker_id: int
     date: date
@@ -35,6 +42,11 @@ class AttendanceOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WorkerDetailOut(WorkerOut):
+    total_attendance_records: int = 0
+    recent_attendance: list[AttendanceOut] = []
 
 
 class ChatRequest(BaseModel):
