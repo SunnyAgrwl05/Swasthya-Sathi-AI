@@ -4,12 +4,22 @@ Thank you for helping improve Swasthya Sathi AI. This project sits at the inters
 
 ## Contribution Principles
 
+- **Issue Assignment First**: Please comment on an issue and wait to be assigned before starting work. This prevents duplicate effort and ensures fair opportunities for all contributors.
 - Keep pull requests focused on one issue or improvement.
 - Prefer small, reviewable changes over broad rewrites.
 - Preserve the healthcare operations context of the project.
-- Avoid committing secrets, API keys, database dumps, or local environment files.
+- Avoid committing secrets, API keys, database dumps (`swasthya.db`), or local environment files (`.env`).
 - Update documentation when behavior, setup, or architecture changes.
 - Add or update tests when code behavior changes.
+
+## Quick Onboarding Checklist
+
+1. [x] Fork repository to your personal GitHub account.
+2. [x] Clone fork locally and configure `upstream` remote pointing to `SunnyAgrwl05/Swasthya-Sathi-AI`.
+3. [x] Set up Python backend virtual environment and install dependencies (`pip install -r backend/requirements.txt`).
+4. [x] Set up Node frontend environment and install packages (`npm install` inside `frontend/`).
+5. [x] Run seed script to populate sample health workers (`python backend/seed.py`).
+6. [x] Verify local test suites pass before making changes (`pytest` and `npm test`).
 
 ## Local Development Setup
 
