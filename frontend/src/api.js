@@ -12,8 +12,10 @@ async function req(path, options = {}) {
 export const api = {
   getWorkers: () => req('/api/workers'),
   getSummary: (days = 30) => req(`/api/analytics/summary?days=${days}`),
-  sendChat: (message, context = null) =>
-    req('/api/chat', { method: 'POST', body: JSON.stringify({ message, context }) }),
+  sendChat: (message, context = null) => {
+    const payload = context ? { message, context } : { message };
+    return req('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
+  },
   checkHallucination: (query, response, context = null, retrieval_score = null) =>
     req('/api/safety/check-hallucination', {
       method: 'POST',
@@ -27,6 +29,12 @@ export const api = {
             language,
         }),
     }),
+  getWorkerAttendanceHistory: (workerId, days = 30) =>
+    req(`/api/workers/${workerId}/attendance-history?days=${days}`),
+  applyLeave: (payload) =>
+    req('/api/leaves', { method: 'POST', body: JSON.stringify(payload) }),
+  getLeaves: (workerId = null) =>
+    req(`/api/leaves${workerId ? `?worker_id=${workerId}` : ''}`),
 }
 
 

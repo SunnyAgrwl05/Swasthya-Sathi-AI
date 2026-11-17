@@ -153,6 +153,175 @@ def create_attendance(
 
 
 # =====================================================
+# LEAVE & ATTENDANCE HISTORY (HEATMAP)
+# =====================================================
+
+@app.post("/api/leaves", response_model=schemas.LeaveOut)
+def create_leave(
+    leave: schemas.LeaveCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Applies an approved leave date range for a health worker, auto-populating daily attendance records.
+    """
+    worker = db.query(models.HealthWorker).filter_by(id=leave.worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    if leave.start_date > leave.end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
+    db_leave = models.LeaveRecord(
+        worker_id=leave.worker_id,
+        start_date=leave.start_date,
+        end_date=leave.end_date,
+        leave_type=leave.leave_type.lower(),
+        reason=leave.reason,
+        status="Approved",
+        approved_by=leave.approved_by,
+    )
+    db.add(db_leave)
+
+    delta = (leave.end_date - leave.start_date).days
+    note_text = f"Leave ({leave.leave_type.capitalize()}): {leave.reason or 'Approved'}"
+    for i in range(delta + 1):
+        day = leave.start_date + datetime.timedelta(days=i)
+        existing_att = (
+            db.query(models.AttendanceRecord)
+            .filter_by(worker_id=leave.worker_id, date=day)
+            .first()
+        )
+        if existing_att:
+            existing_att.status = "leave"
+            existing_att.note = note_text
+            existing_att.marked_by = leave.approved_by
+        else:
+            new_att = models.AttendanceRecord(
+                worker_id=leave.worker_id,
+                date=day,
+                status="leave",
+                note=note_text,
+                marked_by=leave.approved_by,
+            )
+            db.add(new_att)
+
+    db.commit()
+    db.refresh(db_leave)
+    return db_leave
+
+
+@app.get("/api/leaves", response_model=list[schemas.LeaveOut])
+def get_leaves(
+    worker_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Retrieves leave records with optional worker filter."""
+    q = db.query(models.LeaveRecord)
+    if worker_id:
+        q = q.filter_by(worker_id=worker_id)
+    return q.order_by(models.LeaveRecord.start_date.desc()).all()
+
+
+@app.get("/api/workers/{worker_id}/attendance-history", response_model=schemas.WorkerAttendanceHistoryOut)
+def get_worker_attendance_history(
+    worker_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db),
+):
+    """
+    Returns an indexed daily attendance history for 30-day heatmap visualization.
+    """
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    today = datetime.date.today()
+    start_window = today - datetime.timedelta(days=days - 1)
+
+    records = (
+        db.query(models.AttendanceRecord)
+        .filter(
+            models.AttendanceRecord.worker_id == worker_id,
+            models.AttendanceRecord.date >= start_window,
+            models.AttendanceRecord.date <= today,
+        )
+        .all()
+    )
+    records_by_date = {r.date: r for r in records}
+
+    leaves = (
+        db.query(models.LeaveRecord)
+        .filter(
+            models.LeaveRecord.worker_id == worker_id,
+            models.LeaveRecord.end_date >= start_window,
+            models.LeaveRecord.start_date <= today,
+        )
+        .all()
+    )
+
+    day_items = []
+    present_cnt = 0
+    absent_cnt = 0
+    leave_cnt = 0
+
+    for i in range(days):
+        current_date = start_window + datetime.timedelta(days=i)
+        rec = records_by_date.get(current_date)
+
+        leave_match = next(
+            (lv for lv in leaves if lv.start_date <= current_date <= lv.end_date), None
+        )
+
+        if rec:
+            status = rec.status
+            note = rec.note
+            marked_by = rec.marked_by
+            l_type = leave_match.leave_type if leave_match else None
+        elif leave_match:
+            status = "leave"
+            note = f"Leave ({leave_match.leave_type.capitalize()}): {leave_match.reason or 'Approved'}"
+            marked_by = leave_match.approved_by
+            l_type = leave_match.leave_type
+        else:
+            status = "unmarked"
+            note = None
+            marked_by = None
+            l_type = None
+
+        if status == "present":
+            present_cnt += 1
+        elif status == "absent":
+            absent_cnt += 1
+        elif status == "leave":
+            leave_cnt += 1
+
+        day_items.append(
+            schemas.AttendanceHistoryDay(
+                date=current_date,
+                status=status,
+                note=note,
+                marked_by=marked_by,
+                leave_type=l_type,
+            )
+        )
+
+    attendance_pct = round((present_cnt / days) * 100, 1) if days > 0 else 0.0
+
+    return schemas.WorkerAttendanceHistoryOut(
+        worker_id=worker.id,
+        name=worker.name,
+        role=worker.role,
+        center=worker.center,
+        days=day_items,
+        total_days=days,
+        present_days=present_cnt,
+        absent_days=absent_cnt,
+        leave_days=leave_cnt,
+        attendance_pct=attendance_pct,
+    )
+
+
+# =====================================================
 # ANALYTICS
 # =====================================================
 

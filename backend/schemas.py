@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -62,6 +62,51 @@ class HallucinationCheckRequest(BaseModel):
     response: str
     context: str | None = None
     retrieval_score: float | None = None
+
+
+class LeaveCreate(BaseModel):
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str = "casual"
+    reason: str | None = None
+    approved_by: str = "Supervisor"
+
+
+class LeaveOut(BaseModel):
+    id: int
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str
+    reason: str | None = None
+    status: str
+    approved_by: str
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AttendanceHistoryDay(BaseModel):
+    date: date
+    status: str
+    note: str | None = None
+    marked_by: str | None = None
+    leave_type: str | None = None
+
+
+class WorkerAttendanceHistoryOut(BaseModel):
+    worker_id: int
+    name: str
+    role: str
+    center: str
+    days: list[AttendanceHistoryDay]
+    total_days: int
+    present_days: int
+    absent_days: int
+    leave_days: int
+    attendance_pct: float
 
 
 
