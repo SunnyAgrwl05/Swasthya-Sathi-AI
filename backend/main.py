@@ -162,7 +162,10 @@ def analytics_summary(
     db: Session = Depends(get_db),
 ):
 
-    since = datetime.date.today() - datetime.timedelta(days=days)
+    today = datetime.date.today()
+    since = today - datetime.timedelta(days=days)
+    this_week_start = today - datetime.timedelta(days=7)
+    last_week_start = today - datetime.timedelta(days=14)
 
     workers = db.query(models.HealthWorker).all()
 
@@ -182,6 +185,27 @@ def analytics_summary(
 
         pct = round((present / total) * 100, 1) if total else 0
 
+        # Week-over-Week trend calculations
+        this_week = [r for r in w.records if this_week_start <= r.date <= today]
+        last_week = [r for r in w.records if last_week_start <= r.date < this_week_start]
+
+        this_week_pct = (
+            round((sum(1 for r in this_week if r.status == "present") / len(this_week)) * 100, 1)
+            if this_week
+            else None
+        )
+        last_week_pct = (
+            round((sum(1 for r in last_week if r.status == "present") / len(last_week)) * 100, 1)
+            if last_week
+            else None
+        )
+
+        trend_delta = (
+            round(this_week_pct - last_week_pct, 1)
+            if (this_week_pct is not None and last_week_pct is not None)
+            else None
+        )
+
         result.append(
             {
                 "worker_id": w.id,
@@ -191,6 +215,9 @@ def analytics_summary(
                 "present": present,
                 "total_logged": total,
                 "attendance_pct": pct,
+                "this_week_pct": this_week_pct,
+                "last_week_pct": last_week_pct,
+                "trend_delta": trend_delta,
             }
         )
 
