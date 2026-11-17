@@ -139,4 +139,37 @@ describe("api service", () => {
     const url = api.exportAttendanceCSVUrl({ status: "present", center: "Patna PHC" });
     expect(url).toContain("/api/attendance/export-csv?status=present&center=Patna+PHC");
   });
+
+  it("exportWorkersCSVUrl builds valid workers CSV download query", () => {
+    const url = api.exportWorkersCSVUrl({ center: "Patna Sadar", role: "ASHA" });
+    expect(url).toContain("/api/workers/export-csv?center=Patna+Sadar&role=ASHA");
+  });
+
+  it("importWorkersCSV sends FormData to /api/workers/import-csv", async () => {
+    const mockFile = new Blob(["name,center\nAnita,Danapur"], { type: "text/csv" });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ total_rows: 1, created: 1, updated: 0, errors: [] }),
+    });
+
+    const res = await api.importWorkersCSV(mockFile);
+    expect(global.fetch).toHaveBeenCalledWith("/api/workers/import-csv", expect.objectContaining({
+      method: "POST",
+    }));
+    expect(res.created).toBe(1);
+  });
+
+  it("importAttendanceCSV sends FormData to /api/attendance/import-csv", async () => {
+    const mockFile = new Blob(["worker_code,date,status\nHW001,2026-11-01,present"], { type: "text/csv" });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ total_rows: 1, processed: 1, errors: [] }),
+    });
+
+    const res = await api.importAttendanceCSV(mockFile);
+    expect(global.fetch).toHaveBeenCalledWith("/api/attendance/import-csv", expect.objectContaining({
+      method: "POST",
+    }));
+    expect(res.processed).toBe(1);
+  });
 });

@@ -40,6 +40,33 @@ export const api = {
     const qs = params.toString()
     return `${BASE}/api/attendance/export-csv${qs ? `?${qs}` : ''}`
   },
+  exportWorkersCSVUrl: (filters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.center && filters.center !== 'All') params.append('center', filters.center)
+    if (filters.role && filters.role !== 'All') params.append('role', filters.role)
+    const qs = params.toString()
+    return `${BASE}/api/workers/export-csv${qs ? `?${qs}` : ''}`
+  },
+  importWorkersCSV: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/api/workers/import-csv`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+    return res.json()
+  },
+  importAttendanceCSV: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/api/attendance/import-csv`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+    return res.json()
+  },
 }
 
 

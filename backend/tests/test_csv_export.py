@@ -116,3 +116,58 @@ def test_reports_export_csv_alias():
     response = client.get("/api/reports/export-csv")
     assert response.status_code == 200
     assert "Worker Code" in response.text
+
+
+def test_export_workers_csv(db_session):
+    """Test /api/workers/export-csv endpoint."""
+    response = client.get("/api/workers/export-csv")
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "text/csv; charset=utf-8"
+    assert "Worker Code,Name,Role,Center,Phone" in response.text
+
+
+def test_import_workers_csv(db_session):
+    """Test bulk worker CSV import endpoint."""
+    ts = int(datetime.datetime.now().timestamp() * 1000)
+    csv_content = (
+        "worker_code,name,role,center,phone\n"
+        f"BULK-{ts}-1,Meera {ts},ASHA Worker,Danapur Subcenter,9876543211\n"
+        f"BULK-{ts}-2,Sunita {ts},ANM,Danapur Subcenter,9876543212\n"
+    )
+    files = {"file": ("workers.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")}
+    response = client.post("/api/workers/import-csv", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["created"] == 2
+    assert len(data["errors"]) == 0
+
+    # Verify workers exist in DB
+    w1 = db_session.query(models.HealthWorker).filter_by(worker_code=f"BULK-{ts}-1").first()
+    assert w1 is not None
+    assert w1.name == f"Meera {ts}"
+
+
+def test_import_attendance_csv(db_session):
+    """Test bulk attendance CSV import endpoint."""
+    ts = int(datetime.datetime.now().timestamp() * 1000)
+    w = models.HealthWorker(
+        worker_code=f"BULK-ATT-{ts}",
+        name=f"Lalita {ts}",
+        role="ASHA",
+        center="Patna",
+        phone="9998887776",
+    )
+    db_session.add(w)
+    db_session.commit()
+
+    csv_content = (
+        "worker_code,date,status,note\n"
+        f"BULK-ATT-{ts},2026-11-01,present,Maternal health survey\n"
+    )
+    files = {"file": ("attendance.csv", io.BytesIO(csv_content.encode("utf-8")), "text/csv")}
+    response = client.post("/api/attendance/import-csv", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["processed"] == 1
+    assert len(data["errors"]) == 0
+
