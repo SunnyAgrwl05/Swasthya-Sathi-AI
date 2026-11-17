@@ -39,11 +39,29 @@ class AttendanceOut(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    context: str | None = None
+
+
+class HallucinationCheckOut(BaseModel):
+    is_flagged: bool
+    confidence_score: float
+    risk_level: str
+    flagged_reasons: list[str] = []
+    warning_message: str | None = None
+    breakdown: dict = {}
 
 
 class ChatResponse(BaseModel):
     reply: str
     actions_taken: list[str] = []
+    hallucination_check: HallucinationCheckOut | None = None
+
+
+class HallucinationCheckRequest(BaseModel):
+    query: str
+    response: str
+    context: str | None = None
+    retrieval_score: float | None = None
 
 
 
