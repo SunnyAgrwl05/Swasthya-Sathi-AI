@@ -10,6 +10,7 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
+import contextvars
 import datetime
 import os
 from difflib import get_close_matches
@@ -63,7 +64,46 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
-_actions_taken: list[str] = []
+# Using ContextVar and proxy class prevents concurrent request race conditions (fixes #59).
+_actions_taken_default: list[str] = []
+_actions_taken_var: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
+    "_actions_taken", default=_actions_taken_default
+)
+
+
+class _ThreadSafeActionsList:
+    """Thread-safe and async-safe proxy for request-scoped actions_taken audit trail."""
+
+    def _get_list(self) -> list[str]:
+        val = _actions_taken_var.get()
+        if val is _actions_taken_default:
+            val = []
+            _actions_taken_var.set(val)
+        return val
+
+    def append(self, item: str) -> None:
+        self._get_list().append(item)
+
+    def extend(self, items) -> None:
+        self._get_list().extend(items)
+
+    def clear(self) -> None:
+        self._get_list().clear()
+
+    def __iter__(self):
+        return iter(self._get_list())
+
+    def __len__(self) -> int:
+        return len(self._get_list())
+
+    def __bool__(self) -> bool:
+        return bool(self._get_list())
+
+    def __repr__(self) -> str:
+        return repr(self._get_list())
+
+
+_actions_taken = _ThreadSafeActionsList()
 
 
 def _resolve_worker(db: Session, name: str):
@@ -932,101 +972,103 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     """
     Main AI Agent runtime.
     """
-
-    global _actions_taken
-    _actions_taken = []
+    actions_list: list[str] = []
+    token = _actions_taken_var.set(actions_list)
 
     try:
-        last_error = None
+        try:
+            last_error = None
 
-        for key in GEMINI_KEYS:
-            try:
-                genai.configure(api_key=key)
-
-                model = genai.GenerativeModel(
-                    model_name=GEMINI_MODEL,
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    tools=TOOLS,
-                )
-
-                chat = model.start_chat(
-                    enable_automatic_function_calling=True
-                )
-
-                response = chat.send_message(user_message)
-
-                tool_output = ""
-
+            for key in GEMINI_KEYS:
                 try:
-                    if response.text:
-                        tool_output = response.text.strip()
-                except Exception:
+                    genai.configure(api_key=key)
+
+                    model = genai.GenerativeModel(
+                        model_name=GEMINI_MODEL,
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        tools=TOOLS,
+                    )
+
+                    chat = model.start_chat(
+                        enable_automatic_function_calling=True
+                    )
+
+                    response = chat.send_message(user_message)
+
                     tool_output = ""
 
-                # If Gemini returned no text but a tool executed,
-                # show executed actions.
-                if not tool_output and _actions_taken:
-                    tool_output = "\n".join(_actions_taken)
+                    try:
+                        if response.text:
+                            tool_output = response.text.strip()
+                    except Exception:
+                        tool_output = ""
 
-                # If nothing came back, try next key.
-                elif not tool_output:
-                    raise Exception("Gemini returned empty response.")
+                    # If Gemini returned no text but a tool executed,
+                    # show executed actions.
+                    if not tool_output and _actions_taken:
+                        tool_output = "\n".join(_actions_taken)
 
-                print("\n====================================")
-                print("USING KEY:", key[:10] + "...")
-                print("USER:", user_message)
-                print("RESPONSE:")
-                print(tool_output)
-                print("ACTIONS:", _actions_taken)
-                print("====================================\n")
+                    # If nothing came back, try next key.
+                    elif not tool_output:
+                        raise Exception("Gemini returned empty response.")
 
-                return tool_output, list(_actions_taken)
+                    print("\n====================================")
+                    print("USING KEY:", key[:10] + "...")
+                    print("USER:", user_message)
+                    print("RESPONSE:")
+                    print(tool_output)
+                    print("ACTIONS:", list(_actions_taken))
+                    print("====================================\n")
 
-            except Exception as e:
-                print(f"[Gemini Failed] {key[:10]}... -> {e}")
-                last_error = e
-                continue
+                    return tool_output, list(_actions_taken)
 
-        raise Exception(f"All Gemini API Keys failed: {last_error}")
+                except Exception as e:
+                    print(f"[Gemini Failed] {key[:10]}... -> {e}")
+                    last_error = e
+                    continue
 
-    except Exception as e:
-        print(f"[Gemini Error] {e}")
+            raise Exception(f"All Gemini API Keys failed: {last_error}")
 
-    # Local fallback intent parser and tool execution when API keys are missing or API fails locally
-    msg_lower = user_message.lower()
-    try:
-        if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
-            res = who_has_not_marked_today()
-            return res, ["Executed who_has_not_marked_today tool"]
-        elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
-            res = find_low_attendance_workers()
-            return res, ["Executed find_low_attendance_workers tool"]
-        elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
-            res = generate_daily_broadcast()
-            return res, ["Executed generate_daily_broadcast tool"]
-        elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
-            res = generate_weekly_insights()
-            return res, ["Executed generate_weekly_insights tool"]
-        elif "list" in msg_lower or "worker" in msg_lower:
-            res = list_workers()
-            return res, ["Executed list_workers tool"]
-        elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
-            res = get_attendance_summary()
-            return res, ["Executed get_attendance_summary tool"]
-    except Exception as fallback_err:
-        print(f"[Local Tool Fallback Error] {fallback_err}")
+        except Exception as e:
+            print(f"[Gemini Error] {e}")
 
-    try:
-        raw_reply = call_openrouter(user_message)
-        return raw_reply, []
+        # Local fallback intent parser and tool execution when API keys are missing or API fails locally
+        msg_lower = user_message.lower()
+        try:
+            if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
+                res = who_has_not_marked_today()
+                return res, ["Executed who_has_not_marked_today tool"]
+            elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
+                res = find_low_attendance_workers()
+                return res, ["Executed find_low_attendance_workers tool"]
+            elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
+                res = generate_daily_broadcast()
+                return res, ["Executed generate_daily_broadcast tool"]
+            elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
+                res = generate_weekly_insights()
+                return res, ["Executed generate_weekly_insights tool"]
+            elif "list" in msg_lower or "worker" in msg_lower:
+                res = list_workers()
+                return res, ["Executed list_workers tool"]
+            elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
+                res = get_attendance_summary()
+                return res, ["Executed get_attendance_summary tool"]
+        except Exception as fallback_err:
+            print(f"[Local Tool Fallback Error] {fallback_err}")
 
-    except Exception as e:
-        print(f"[OpenRouter Error] {e}")
+        try:
+            raw_reply = call_openrouter(user_message)
+            return raw_reply, []
 
-        return (
-            """❌ AI Operations Agent is currently unavailable.
+        except Exception as e:
+            print(f"[OpenRouter Error] {e}")
+
+            return (
+                """❌ AI Operations Agent is currently unavailable.
 
 Please try again after a few seconds.""",
-            [],
-        )
+                [],
+            )
+    finally:
+        _actions_taken_var.reset(token)
 
