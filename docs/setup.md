@@ -98,26 +98,41 @@ Restart the Vite dev server after changing environment variables.
 
 ## Run Tests
 
-Backend:
+### Backend Tests (Pytest)
 
 ```bash
 cd backend
-pytest
+pytest -v
 ```
 
-Frontend:
+### Frontend Tests (Vitest & React Testing Library)
+
+The frontend uses **Vitest** with **jsdom** and **@testing-library/react** for unit testing components, utility modules, and API services:
 
 ```bash
 cd frontend
+
+# Run all test suites once
 npm test
-```
 
-Build the frontend:
+# Run tests in interactive watch mode during development
+npm run test:watch
 
-```bash
-cd frontend
+# Generate code coverage report (text summary, JSON, and HTML in frontend/coverage/)
+npm run test:coverage
+
+# Run ESLint linting
+npm run lint
+
+# Build production bundle
 npm run build
 ```
+
+#### Test Architecture & Mocking Guidelines
+
+- **Setup file (`src/setupTests.js`)**: Automatically configures `@testing-library/jest-dom` custom matchers, polyfills `Element.prototype.scrollIntoView`, and mocks `window.ResizeObserver` for Recharts.
+- **API Mocking (`src/api.test.js`)**: Mocks `global.fetch` to verify headers, endpoint URLs, query strings, and error status handling.
+- **Component Mocking**: Component integration tests (`WeeklyInsights.test.jsx`, `DailyBroadcast.test.jsx`, `ChatAgent.test.jsx`) mock the `api` module via `vi.mock('../api')` to test loading spinners, user inputs, success states, and error handling without requiring a live backend.
 
 ## Docker Setup
 
