@@ -22,6 +22,12 @@ coverage/
 frontend/coverage/
 .pytest_cache/
 
+# Testing & Coverage
+.coverage
+.pytest_cache/
+htmlcov/
+*.db
+
 # OS
 .DS_Store
 * 2.*
