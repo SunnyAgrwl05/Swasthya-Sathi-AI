@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -32,6 +32,29 @@ class AttendanceOut(BaseModel):
     status: str
     note: str | None = None
     marked_by: str
+
+    class Config:
+        from_attributes = True
+
+
+class LeaveCreate(BaseModel):
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str = "casual"
+    reason: str | None = None
+    approved_by: str = "supervisor"
+
+
+class LeaveOut(BaseModel):
+    id: int
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str
+    reason: str | None = None
+    approved_by: str
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True

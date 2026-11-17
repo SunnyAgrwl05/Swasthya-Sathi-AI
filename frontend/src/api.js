@@ -27,6 +27,19 @@ export const api = {
             language,
         }),
     }),
+  getAttendance: (workerId = null) => {
+    const url = workerId ? `/api/attendance?worker_id=${workerId}` : '/api/attendance'
+    return req(url)
+  },
+  getLeaves: (workerId = null) => {
+    const url = workerId ? `/api/leaves?worker_id=${workerId}` : '/api/leaves'
+    return req(url)
+  },
+  createLeave: (leaveData) =>
+    req('/api/leaves', {
+      method: 'POST',
+      body: JSON.stringify(leaveData),
+    }),
 }
 
 

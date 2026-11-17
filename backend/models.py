@@ -61,6 +61,12 @@ class HealthWorker(Base):
         cascade="all, delete-orphan",
     )
 
+    leaves = relationship(
+        "LeaveRecord",
+        back_populates="worker",
+        cascade="all, delete-orphan",
+    )
+
 
 # =====================================================
 # Attendance Record
@@ -105,6 +111,59 @@ class AttendanceRecord(Base):
     worker = relationship(
         "HealthWorker",
         back_populates="records",
+    )
+
+
+# =====================================================
+# Leave Record
+# =====================================================
+
+class LeaveRecord(Base):
+    __tablename__ = "leave_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    worker_id = Column(
+        Integer,
+        ForeignKey("health_workers.id"),
+        nullable=False,
+    )
+
+    start_date = Column(
+        Date,
+        nullable=False,
+    )
+
+    end_date = Column(
+        Date,
+        nullable=False,
+    )
+
+    leave_type = Column(
+        String,
+        default="casual",
+        nullable=False,
+    )
+
+    reason = Column(
+        Text,
+        nullable=True,
+    )
+
+    approved_by = Column(
+        String,
+        default="supervisor",
+        nullable=False,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    worker = relationship(
+        "HealthWorker",
+        back_populates="leaves",
     )
 
 
