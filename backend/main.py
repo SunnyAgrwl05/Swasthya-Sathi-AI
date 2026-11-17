@@ -15,6 +15,9 @@ from agent import (
 )
 from database import engine, get_db
 from hallucination_detector import detect_hallucination
+from sms_dispatcher import (
+    dispatch_batch_broadcast_sms,
+)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -275,7 +278,7 @@ def check_hallucination_endpoint(req: schemas.HallucinationCheckRequest):
 # =====================================================
 
 @app.get("/api/broadcast/daily")
-def daily_broadcast(db: Session = Depends(get_db)):
+def daily_broadcast(dispatch_sms: bool = False, db: Session = Depends(get_db)):
     msg = generate_daily_broadcast()
     workers = db.query(models.HealthWorker).all()
     for w in workers:
@@ -289,9 +292,71 @@ def daily_broadcast(db: Session = Depends(get_db)):
             )
         )
     db.commit()
+
+    sms_summary = None
+    if dispatch_sms:
+        sms_summary = dispatch_batch_broadcast_sms(db, workers, msg)
+
     return {
-        "message": msg
+        "message": msg,
+        "sms_dispatched": dispatch_sms,
+        "sms_summary": sms_summary,
     }
+
+
+@app.post("/api/notifications/dispatch-sms", response_model=schemas.SMSDispatchSummaryOut)
+def dispatch_sms_endpoint(
+    req: schemas.SMSDispatchRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Dispatches automated SMS alerts to offline field workers with delivery audit logging.
+    """
+    text = req.message or generate_daily_broadcast()
+
+    if req.target == "worker" and req.worker_id:
+        worker = db.query(models.HealthWorker).filter_by(id=req.worker_id).first()
+        if not worker:
+            raise HTTPException(status_code=404, detail="Worker not found")
+        workers = [worker]
+    elif req.target == "pending":
+        today = datetime.date.today()
+        marked_ids = {
+            r.worker_id
+            for r in db.query(models.AttendanceRecord.worker_id).filter_by(date=today).all()
+        }
+        workers = db.query(models.HealthWorker).filter(models.HealthWorker.id.notin_(marked_ids)).all()
+    else:
+        workers = db.query(models.HealthWorker).all()
+
+    summary = dispatch_batch_broadcast_sms(db, workers, text)
+    return schemas.SMSDispatchSummaryOut(
+        status="completed",
+        total_recipients=summary["total"],
+        sent=summary["sent"],
+        failed=summary["failed"],
+        channel="SMS",
+        errors=summary.get("errors", []),
+    )
+
+
+@app.get("/api/notifications/logs", response_model=list[schemas.NotificationLogOut])
+def get_notification_logs(
+    notification_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieves recent dispatched notification audit records across SMS, WhatsApp, etc.
+    """
+    q = db.query(models.NotificationLog)
+    if notification_type:
+        q = q.filter(models.NotificationLog.notification_type == notification_type)
+    if status:
+        q = q.filter(models.NotificationLog.status == status)
+
+    return q.order_by(models.NotificationLog.id.desc()).limit(limit).all()
 
 
 @app.get("/api/insights/weekly")

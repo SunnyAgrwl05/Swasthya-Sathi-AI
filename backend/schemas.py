@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -62,6 +62,34 @@ class HallucinationCheckRequest(BaseModel):
     response: str
     context: str | None = None
     retrieval_score: float | None = None
+
+
+class NotificationLogOut(BaseModel):
+    id: int
+    worker_name: str
+    phone: str | None = None
+    notification_type: str
+    message: str
+    status: str
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class SMSDispatchRequest(BaseModel):
+    message: str | None = None
+    worker_id: int | None = None
+    target: str = "all"  # "all", "pending", "worker"
+
+
+class SMSDispatchSummaryOut(BaseModel):
+    status: str
+    total_recipients: int
+    sent: int
+    failed: int
+    channel: str = "SMS"
+    errors: list[str] = []
 
 
 

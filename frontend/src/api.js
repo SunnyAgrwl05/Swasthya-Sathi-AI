@@ -12,8 +12,10 @@ async function req(path, options = {}) {
 export const api = {
   getWorkers: () => req('/api/workers'),
   getSummary: (days = 30) => req(`/api/analytics/summary?days=${days}`),
-  sendChat: (message, context = null) =>
-    req('/api/chat', { method: 'POST', body: JSON.stringify({ message, context }) }),
+  sendChat: (message, context = null) => {
+    const payload = context ? { message, context } : { message };
+    return req('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
+  },
   checkHallucination: (query, response, context = null, retrieval_score = null) =>
     req('/api/safety/check-hallucination', {
       method: 'POST',
@@ -27,6 +29,13 @@ export const api = {
             language,
         }),
     }),
+  dispatchSMSAlerts: (payload = {}) =>
+    req('/api/notifications/dispatch-sms', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getNotificationLogs: (limit = 20) =>
+    req(`/api/notifications/logs?limit=${limit}`),
 }
 
 
