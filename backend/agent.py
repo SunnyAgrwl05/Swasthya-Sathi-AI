@@ -10,6 +10,7 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
+import contextvars
 import datetime
 import os
 from difflib import get_close_matches
@@ -61,9 +62,18 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 
     raise Exception(f"All Gemini API Keys failed: {last_error}")
 
-# actions_taken is filled by tools during a single chat turn so the API
-# response can show the user a small audit trail of what the agent did.
-_actions_taken: list[str] = []
+# _actions_context tracks actions executed by tools within a request context,
+# isolating actions per async task / thread to prevent concurrent request race conditions.
+_actions_context: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
+    "_actions_context", default=[]
+)
+
+
+def record_action(action: str):
+    """Records an executed tool action in the current request context."""
+    current = list(_actions_context.get())
+    current.append(action)
+    _actions_context.set(current)
 
 
 def _resolve_worker(db: Session, name: str):
@@ -144,7 +154,7 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
 
         db.commit()
 
-        _actions_taken.append(
+        record_action(
             f"Marked {worker.name} as {status} on {the_date.isoformat()}"
         )
 
@@ -455,7 +465,7 @@ def consult_medical_guidelines(topic: str) -> str:
             "Please advise the supervisor to consult the Primary Health Centre (PHC) Medical Officer."
         )
 
-    _actions_taken.append(f"Retrieved verified health guideline: {results[0]['section_title']}")
+    record_action(f"Retrieved verified health guideline: {results[0]['section_title']}")
 
     formatted = []
     for r in results:
@@ -933,8 +943,7 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     Main AI Agent runtime.
     """
 
-    global _actions_taken
-    _actions_taken = []
+    _actions_context.set([])
 
     try:
         last_error = None
@@ -963,10 +972,12 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 except Exception:
                     tool_output = ""
 
+                executed_actions = list(_actions_context.get())
+
                 # If Gemini returned no text but a tool executed,
                 # show executed actions.
-                if not tool_output and _actions_taken:
-                    tool_output = "\n".join(_actions_taken)
+                if not tool_output and executed_actions:
+                    tool_output = "\n".join(executed_actions)
 
                 # If nothing came back, try next key.
                 elif not tool_output:
@@ -977,10 +988,10 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 print("USER:", user_message)
                 print("RESPONSE:")
                 print(tool_output)
-                print("ACTIONS:", _actions_taken)
+                print("ACTIONS:", executed_actions)
                 print("====================================\n")
 
-                return tool_output, list(_actions_taken)
+                return tool_output, executed_actions
 
             except Exception as e:
                 print(f"[Gemini Failed] {key[:10]}... -> {e}")
@@ -1029,4 +1040,11 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
 Please try again after a few seconds.""",
             [],
         )
+
+
+def __getattr__(name: str):
+    """Provides backward compatibility for direct access to `_actions_taken`."""
+    if name == "_actions_taken":
+        return list(_actions_context.get())
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

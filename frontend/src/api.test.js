@@ -60,7 +60,7 @@ describe("api service", () => {
     expect(global.fetch).toHaveBeenCalledWith("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Mark Anita present" }),
+      body: JSON.stringify({ message: "Mark Anita present", context: null }),
     });
     expect(result).toEqual(mockReply);
   });
@@ -95,6 +95,28 @@ describe("api service", () => {
       body: JSON.stringify({ language: "en" }),
     });
     expect(result).toEqual(mockInsights);
+  });
+
+  it("checkHallucination posts query and response to /api/safety/check-hallucination", async () => {
+    const mockCheck = { is_flagged: false, confidence_score: 0.95, risk_level: "LOW" };
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockCheck,
+    });
+
+    const result = await api.checkHallucination("dosage", "Take ORS", "clinical context", 0.9);
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/safety/check-hallucination", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: "dosage",
+        response: "Take ORS",
+        context: "clinical context",
+        retrieval_score: 0.9,
+      }),
+    });
+    expect(result).toEqual(mockCheck);
   });
 
   it("throws error when response status is not ok", async () => {
