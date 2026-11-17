@@ -124,4 +124,67 @@ describe("ChatAgent Component", () => {
 
     expect(api.sendChat).not.toHaveBeenCalled();
   });
+
+  it("renders clinical verification chip and expands audit drawer on click", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "ORS dosage for pediatric diarrhea is 5ml/kg.",
+      actions_taken: [],
+      hallucination_check: {
+        is_flagged: false,
+        confidence_score: 0.94,
+        risk_level: "LOW",
+        flagged_reasons: [],
+        warning_message: null,
+      },
+    });
+
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    const sendBtn = screen.getByRole("button", { name: "Send" });
+
+    fireEvent.change(input, { target: { value: "ORS dosage" } });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/🛡️ MoHFW Verified/i)).toBeInTheDocument();
+      expect(screen.getByText(/• 94%/i)).toBeInTheDocument();
+    });
+
+    // Click the verification chip to expand audit drawer
+    const chipBtn = screen.getByRole("button", { name: /🛡️ MoHFW Verified/i });
+    fireEvent.click(chipBtn);
+
+    expect(screen.getByText("Clinical Safety & Hallucination Audit")).toBeInTheDocument();
+    expect(screen.getByText(/MoHFW \/ National Health Mission \(NHM\) Bihar/i)).toBeInTheDocument();
+    expect(screen.getByText(/No clinical hallucinations or protocol contradictions detected/i)).toBeInTheDocument();
+  });
+
+  it("renders mandatory medical disclaimer for high clinical risk response", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "Administer injection oxytocin urgently.",
+      actions_taken: [],
+      hallucination_check: {
+        is_flagged: true,
+        confidence_score: 0.45,
+        risk_level: "HIGH",
+        flagged_reasons: ["Critical prescription medication without dosage validation"],
+        warning_message: "High risk of adverse maternal event. Requires physician sign-off.",
+      },
+    });
+
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    const sendBtn = screen.getByRole("button", { name: "Send" });
+
+    fireEvent.change(input, { target: { value: "Oxytocin dosage" } });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/🚨 High Clinical Risk/i)).toBeInTheDocument();
+      expect(screen.getByText(/🚨 Mandatory Medical Disclaimer/i)).toBeInTheDocument();
+      expect(screen.getByText(/This response involves high-risk clinical advice/i)).toBeInTheDocument();
+    });
+  });
 });

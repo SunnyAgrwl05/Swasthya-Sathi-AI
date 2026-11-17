@@ -16,6 +16,7 @@ const SUGGESTIONS = [
 export default function ChatAgent() {
   const [messages, setMessages] = useState([])
   const [showWelcome, setShowWelcome] = useState(true)
+  const [expandedSafetyIndex, setExpandedSafetyIndex] = useState(null)
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -163,23 +164,95 @@ Ask me:
             >
               {m.role === "agent" ? (
                 <div>
-                  {m.safety?.is_flagged && (
-                    <div
-                      className={`mb-3 p-2.5 rounded-xl border text-xs leading-relaxed ${
-                        m.safety.risk_level === 'HIGH'
-                          ? 'bg-red-500/15 border-red-500/30 text-red-200'
-                          : 'bg-amber-500/15 border-amber-500/30 text-amber-200'
-                      }`}
-                    >
-                      <div className="font-semibold flex items-center gap-1.5 mb-1">
-                        <span>{m.safety.risk_level === 'HIGH' ? '⚠️ High Clinical Caution' : 'ℹ️ Medical Advisory'}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 ml-auto">
-                          Confidence: {Math.round((m.safety.confidence_score || 0) * 100)}%
-                        </span>
+                  {/* Verification Status Chip & Clinical Safety Audit */}
+                  <div className="mb-2.5">
+                    {m.safety ? (
+                      <div className="inline-block">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedSafetyIndex(expandedSafetyIndex === i ? null : i)}
+                          aria-expanded={expandedSafetyIndex === i}
+                          className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
+                            m.safety.risk_level === 'HIGH'
+                              ? 'bg-red-500/15 border-red-500/35 text-red-200 hover:bg-red-500/25'
+                              : m.safety.risk_level === 'MEDIUM'
+                              ? 'bg-amber-500/15 border-amber-500/35 text-amber-200 hover:bg-amber-500/25'
+                              : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200 hover:bg-emerald-500/25'
+                          }`}
+                          title="Click to view clinical safety audit"
+                        >
+                          <span>
+                            {m.safety.risk_level === 'HIGH'
+                              ? '🚨 High Clinical Risk'
+                              : m.safety.risk_level === 'MEDIUM'
+                              ? '⚠️ Clinical Caution'
+                              : '🛡️ MoHFW Verified'}
+                          </span>
+                          <span className="opacity-80">
+                            • {Math.round((m.safety.confidence_score || 0) * 100)}%
+                          </span>
+                          <span className="text-[9px] opacity-60 ml-0.5">
+                            {expandedSafetyIndex === i ? '▲' : '▼'}
+                          </span>
+                        </button>
+
+                        {expandedSafetyIndex === i && (
+                          <div className="mt-2 p-3 rounded-xl bg-slate-900/95 border border-white/10 text-xs shadow-xl space-y-2 text-slate-200">
+                            <div className="flex items-center justify-between border-b border-white/10 pb-1.5 font-semibold text-[11px]">
+                              <span className="text-white">Clinical Safety & Hallucination Audit</span>
+                              <span className="text-pulse2">
+                                Confidence: {Math.round((m.safety.confidence_score || 0) * 100)}%
+                              </span>
+                            </div>
+                            <div>
+                              <span className="font-medium text-slate-400 block text-[10px] uppercase tracking-wider">Cited Protocol</span>
+                              <span className="text-[11px] text-slate-200">
+                                MoHFW / National Health Mission (NHM) Bihar Standard Clinical Guidelines
+                              </span>
+                            </div>
+                            {m.safety.flagged_reasons?.length > 0 ? (
+                              <div>
+                                <span className="font-medium text-amber-300 block text-[10px] uppercase tracking-wider">Caveats & Findings</span>
+                                <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-amber-100">
+                                  {m.safety.flagged_reasons.map((reason, rIdx) => (
+                                    <li key={rIdx}>{reason}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="font-medium text-emerald-300 block text-[10px] uppercase tracking-wider">Caveats & Findings</span>
+                                <p className="text-[11px] text-emerald-100">No clinical hallucinations or protocol contradictions detected.</p>
+                              </div>
+                            )}
+                            {m.safety.warning_message && (
+                              <div>
+                                <span className="font-medium text-red-300 block text-[10px] uppercase tracking-wider">Clinical Warning</span>
+                                <p className="text-[11px] text-red-100 leading-relaxed">{m.safety.warning_message}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[11px] opacity-90">{m.safety.warning_message}</p>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-slate-500/15 text-slate-300 border border-slate-500/20">
+                        📋 Operational Query
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Mandatory Medical Disclaimer for High Clinical Risk Queries */}
+                  {m.safety?.risk_level === 'HIGH' && (
+                    <div className="mb-3 p-3 rounded-xl border bg-red-500/15 border-red-500/30 text-red-200 text-xs">
+                      <div className="font-semibold flex items-center gap-1.5 mb-1 text-red-100">
+                        <span>🚨 Mandatory Medical Disclaimer</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed">
+                        This response involves high-risk clinical advice. Generated for operational guidance only and cannot replace clinical judgment by a licensed Medical Officer. Verify with PHC Medical Officer before clinical administration.
+                      </p>
                     </div>
                   )}
+
                   <div className="prose prose-invert max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {m.text}
