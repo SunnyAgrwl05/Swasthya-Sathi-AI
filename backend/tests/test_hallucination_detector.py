@@ -1,8 +1,6 @@
 """Unit tests for the hallucination detection module."""
 
-import pytest
 from hallucination_detector import (
-    DetectionResult,
     HallucinationDetectorConfig,
     MedicalHallucinationDetector,
     detect_hallucination,
