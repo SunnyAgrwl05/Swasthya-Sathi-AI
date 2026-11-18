@@ -1,82 +1,119 @@
-# 🛡️ Medical Hallucination Detection & Prompt Safeguards
+# 🛡️ Medical Hallucination Detection & Safety Verification
 
 ## Overview
 
-In clinical and public health applications like **Swasthya Sathi AI**, ensuring the safety and accuracy of AI-generated responses is paramount. Large Language Models (LLMs) can occasionally generate unsupported medical claims, fabricate dosages, or provide ungrounded clinical recommendations (hallucinations).
+Large Language Models (LLMs) used in clinical or public health contexts may occasionally generate unsupported claims, excessive medical guarantees, or inaccurate pharmaceutical dosages (hallucinations).
 
-The **Medical Hallucination Detector** (`backend/hallucination_detector.py`) is a prompt safeguard and verification engine built specifically for Bihar's Primary Health Centre (PHC) network.
+**Swasthya Sathi AI** implements a multi-tiered hallucination detection and response-safety framework to guard healthcare workers and patients against unverified advice.
 
 ---
 
 ## Architecture & Detection Pipeline
 
-```mermaid
-flowchart TD
-    A["User Query / AI Response"] --> B{"Is Medical Topic?"}
-    B -- No --> C["Pass-through (Confidence: 1.0, Risk: Low)"]
-    B -- Yes --> D["Grounding Evaluation against PHC Protocols"]
-    D --> E["Prescription & Dosage Assertion Check"]
-    D --> F["Hedge & Miracle Phrase Pattern Scanning"]
-    E --> G["Risk & Confidence Scoring Engine"]
-    F --> G
-    G --> H{"Confidence < Threshold OR Critical Risk?"}
-    H -- Yes --> I["Flag Response & Inject Safeguard Disclaimer"]
-    H -- No --> J["Verified Response (Low Risk)"]
+```
+User Query + Generated Response (+ Optional Context/RAG Docs)
+                          │
+                          ▼
+            [Medical Domain Classification]
+                          │
+        ┌─────────────────┴─────────────────┐
+        ▼                                   ▼
+ [General Operations]             [Clinical Safety Checks]
+  - Neutral baseline               - Lexical Grounding overlap
+  - No disclaimer penalty          - Dangerous claim penalty scan
+                                   - Clinical hedging & disclaimer check
+                                            │
+                                            ▼
+                                [Confidence Scoring (0.0 - 1.0)]
+                                            │
+                                            ▼
+                           [Risk Classification (LOW / MEDIUM / HIGH)]
+                                            │
+                                            ▼
+                             [Advisory Warning & UI Banner]
 ```
 
----
+### 1. Confidence Scoring Breakdown
 
-## Key Capabilities
+The final confidence score is computed as:
 
-1. **Entity Grounding Verification**
-   - Validates mentions against Bihar NHM / WHO Primary Health Centre protocols:
-     - Maternal Health: ANC, PNC, IFA, Janani Suraksha Yojana, institutional delivery.
-     - Universal Immunization Programme: BCG, OPV, Pentavalent, Rotavirus, MR.
-     - Primary Care: ORS, Zinc, Dehydration, Kala-Azar, Anemia Mukt Bharat.
+$$\text{Confidence} = w_{\text{base}} + w_{\text{grounding}} - P_{\text{risk}} + M_{\text{disclaimer}}$$
 
-2. **Dangerous Prescription & Dosage Interception**
-   - Detects unsolicited antibiotic recommendations (Amoxicillin, Azithromycin, Ciprofloxacin).
-   - Detects unauthorized dosage claims (e.g. `500 mg twice daily`) and flags them for mandatory clinical escalation (`requires_human_review = True`, Risk: `critical`).
-
-3. **Hedge & Miracle Phrase Filtering**
-   - Flags suspicious certainty markers and fabricated claims (e.g. `miracle cure`, `100% guaranteed cure`, `chamatkari ilaj`).
-
-4. **Automated Bilingual Disclaimers**
-   - **Hindi**:
-     > ⚠️ *स्वास्थ्य सूचना: स्वास्थ्य साथी AI केवल प्राथमिक स्वास्थ्य संचालन सहायता प्रदान करता है। यह डॉक्टर के परामर्श या दवा पर्चे का विकल्प नहीं है। किसी भी गंभीर लक्षण पर तुरंत नजदीकी प्राथमिक स्वास्थ्य केंद्र (PHC) के चिकित्सा अधिकारी से संपर्क करें।*
-   - **English**:
-     > ⚠️ *Medical Notice: Swasthya Sathi AI provides informational guidance for PHC operations. This is not a substitute for clinical diagnosis or prescription. Always consult a Medical Officer at your nearest Primary Health Centre (PHC).*
+Where:
+- **Base Confidence**: Default prior for conversational clarity.
+- **Context Grounding Overlap**: Evaluates content-word intersection with verified medical knowledge base entries (RAG context).
+- **Dangerous Claim Penalty ($P_{\text{risk}}$)**: Heavily penalizes dangerous claims such as "100% cure", "instant miracle cure", "no side effects", or unverified dangerous dosing intervals.
+- **Hedging & Disclaimer Modifier ($M_{\text{disclaimer}}$)**: Rewards professional caution ("consult a physician", "for informational purposes") and penalizes clinical advice lacking safety disclaimers.
 
 ---
 
-## Configuration & Usage
+## Risk Classifications & Thresholds
 
-```python
-from hallucination_detector import MedicalHallucinationDetector
-
-detector = MedicalHallucinationDetector(
-    min_confidence_threshold=0.75,
-    strict_dosage_safety=True,
-    default_language="hi"
-)
-
-result = detector.audit_response(
-    query="Bacche ko dast aur ulti hai, kya karein?",
-    response="Bacche ko ORS ka ghol dein aur zinc tablet dein...",
-    language="hi"
-)
-
-print(result.confidence_score)     # 0.95
-print(result.risk_level)           # "low"
-print(result.grounded_entities)    # ["ors", "zinc"]
-print(result.is_flagged)           # False
-```
+| Risk Level | Threshold Criteria | UI Behavior |
+| :--- | :--- | :--- |
+| **LOW** | Confidence $\ge 0.70$ and no dangerous claims detected | Response displayed normally without interruption. |
+| **MEDIUM** | Confidence $< 0.70$ or missing required clinical hedging | Yellow warning banner alerting user to cross-check. |
+| **HIGH** | Confidence $< 0.45$ or critical absolute claim detected | Prominent red safety banner warning against medical action. |
 
 ---
 
-## Running Verification Tests
+## Configuration via Environment Variables
+
+All confidence thresholds are configurable without code modifications:
 
 ```bash
-cd backend
-python -m pytest tests/test_hallucination_detector.py -v
+# Confidence below which a response is classified as HIGH risk
+HALLUCINATION_HIGH_RISK_THRESHOLD=0.45
+
+# Confidence below which a response is flagged (MEDIUM risk)
+HALLUCINATION_FLAG_THRESHOLD=0.70
+
+# Whether medical answers must include clinical disclaimers
+HALLUCINATION_REQUIRE_DISCLAIMER=true
+```
+
+---
+
+## API Reference
+
+### Standalone Check Endpoint
+`POST /api/safety/check-hallucination`
+
+#### Request Body
+```json
+{
+  "query": "Can herbal tea completely cure high blood pressure?",
+  "response": "Drinking this tea 100% guarantees to cure your high blood pressure instantly.",
+  "context": "Hypertension requires systematic monitoring and clinical consultation."
+}
+```
+
+#### Response Body
+```json
+{
+  "is_flagged": true,
+  "confidence_score": 0.35,
+  "risk_level": "HIGH",
+  "flagged_reasons": [
+    "Unsubstantiated or dangerous absolute claim detected: '100%\\s*(guarantee[s]?|cure[s]?|safe|effective)'",
+    "Medical response is missing a standard clinical advisory or disclaimer."
+  ],
+  "warning_message": "⚠️ Critical Advisory: This response contains unverified medical claims or unsupported advice. Do not make health decisions based on this output. Consult a qualified physician.",
+  "breakdown": {
+    "is_medical_domain": true,
+    "grounding_score": 0.35,
+    "risk_penalty": 0.35,
+    "has_disclaimer": false
+  }
+}
+```
+
+---
+
+## Running Unit & Integration Tests
+
+From the `backend/` directory:
+
+```bash
+pytest -v tests/test_hallucination_detector.py tests/test_safety_endpoint.py
 ```
