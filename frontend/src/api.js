@@ -12,7 +12,11 @@ async function req(path, options = {}) {
 export const api = {
   getWorkers: () => req('/api/workers'),
   getSummary: (days = 30) => req(`/api/analytics/summary?days=${days}`),
-  sendChat: (message) => req('/api/chat', { method: 'POST', body: JSON.stringify({ message }) }),
+  sendChat: (message, context = null) => {
+    const payload = { message };
+    if (context) payload.context = context;
+    return req('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
+  },
   streamChat: async (message, { onChunk, onActions, onDone, onError }) => {
     try {
       const res = await fetch(`${BASE}/api/chat/stream`, {
@@ -58,6 +62,11 @@ export const api = {
       else throw err
     }
   },
+  checkHallucination: (query, response, context = null, retrieval_score = null) =>
+    req('/api/safety/check-hallucination', {
+      method: 'POST',
+      body: JSON.stringify({ query, response, context, retrieval_score }),
+    }),
   getDailyBroadcast: () => req('/api/broadcast/daily'),
   getWeeklyInsights: (language = "hi") =>
     req("/api/insights/weekly", {

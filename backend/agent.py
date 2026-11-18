@@ -445,6 +445,40 @@ def generate_daily_broadcast() -> str:
     finally:
         db.close()
 
+
+def consult_medical_guidelines(topic: str) -> str:
+    """Consults verified Indian public health protocols and guidelines for
+    immunization schedules, maternal care (ANC), childhood illnesses (IMNCI),
+    and ASHA/ANM field duties. Use this whenever the supervisor asks a medical,
+    immunization, disease, or clinical protocol question.
+
+    Args:
+        topic: The disease, vaccine, pregnancy protocol, or public health topic.
+    """
+    from knowledge.rag_service import get_health_knowledge_base
+
+    kb = get_health_knowledge_base()
+    results = kb.search(topic, top_k=2)
+
+    if not results:
+        return (
+            f"No specific national guideline found matching '{topic}'. "
+            "Please advise the supervisor to consult the Primary Health Centre (PHC) Medical Officer."
+        )
+
+    _actions_taken.append(f"Retrieved verified health guideline: {results[0]['section_title']}")
+
+    formatted = []
+    for r in results:
+        formatted.append(
+            f"📖 {r['document_title']} — {r['section_title']}\n"
+            f"{r['content']}\n"
+            f"(Source: {r['source_file']})"
+        )
+
+    return "\n\n---\n\n".join(formatted)
+
+
 SYSTEM_INSTRUCTION = """
 You are Swasthya Sathi AI.
 
@@ -466,6 +500,7 @@ YOUR CAPABILITIES
 • Generate weekly insights
 • Generate daily operational reports
 • Identify workers requiring follow-up
+• Consult verified public health, immunization, and maternal care guidelines
 • Answer general knowledge questions when unrelated to attendance
 
 ====================================================
@@ -484,6 +519,18 @@ Never assume data.
 
 If a worker cannot be found,
 politely inform the supervisor.
+
+====================================================
+
+FOR MEDICAL & PUBLIC HEALTH QUESTIONS
+
+Always use the consult_medical_guidelines tool.
+
+Never invent vaccine schedules, drug doses, or medical treatments.
+
+Always ground advice in the retrieved guideline text.
+
+Always finish with a clear recommendation that clinical decisions must be confirmed by the PHC Medical Officer.
 
 ====================================================
 
@@ -886,6 +933,7 @@ TOOLS = [
     who_has_not_marked_today,
     generate_daily_broadcast,
     generate_weekly_insights,
+    consult_medical_guidelines,
 ]
 
 
@@ -1091,6 +1139,30 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
             return raw_reply, []
         except Exception as e:
             print(f"[OpenRouter Error] {e}")
+
+    # Local fallback intent parser and tool execution when API keys are missing or API fails locally
+    msg_lower = user_message.lower()
+    try:
+        if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
+            res = who_has_not_marked_today()
+            return res, ["Executed who_has_not_marked_today tool"]
+        elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
+            res = find_low_attendance_workers()
+            return res, ["Executed find_low_attendance_workers tool"]
+        elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
+            res = generate_daily_broadcast()
+            return res, ["Executed generate_daily_broadcast tool"]
+        elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
+            res = generate_weekly_insights()
+            return res, ["Executed generate_weekly_insights tool"]
+        elif "list" in msg_lower or "worker" in msg_lower:
+            res = list_workers()
+            return res, ["Executed list_workers tool"]
+        elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
+            res = get_attendance_summary()
+            return res, ["Executed get_attendance_summary tool"]
+    except Exception as fallback_err:
+        print(f"[Local Tool Fallback Error] {fallback_err}")
 
     # 4. Final friendly assistance message
     return (
