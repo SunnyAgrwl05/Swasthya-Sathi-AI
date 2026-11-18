@@ -64,4 +64,27 @@ class HallucinationCheckRequest(BaseModel):
     retrieval_score: float | None = None
 
 
+class LeaveCreate(BaseModel):
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str = "casual"
+    reason: str | None = None
+    approved_by: str | None = "supervisor"
+
+
+class LeaveOut(BaseModel):
+    id: int
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str
+    reason: str | None = None
+    approved_by: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+
 

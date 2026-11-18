@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from "react";
+import WorkerDetailModal from "./WorkerDetailModal";
 
 function badge(pct) {
   if (pct >= 85) {
@@ -31,10 +32,12 @@ function badge(pct) {
 function WorkerTable({
   workers = [],
   summary = [],
+  onRefresh,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [centerFilter, setCenterFilter] = useState("All");
+  const [selectedWorker, setSelectedWorker] = useState(null);
 
   const byId = useMemo(
     () =>
@@ -229,9 +232,11 @@ function WorkerTable({
               return (
                 <tr
                   key={worker.id}
-                  className="border-b border-line/50 hover:bg-white/[0.03] transition-colors last:border-0"
+                  onClick={() => setSelectedWorker(worker)}
+                  className="border-b border-line/50 hover:bg-white/[0.06] cursor-pointer transition-colors last:border-0 group"
+                  title="Click to view 30-day timeline & log leave"
                 >
-                  <td className="py-3 px-2 font-medium whitespace-nowrap">
+                  <td className="py-3 px-2 font-medium whitespace-nowrap text-white group-hover:text-pulse transition-colors">
                     {worker.name}
                   </td>
 
@@ -275,6 +280,16 @@ function WorkerTable({
           </tbody>
         </table>
       </div>
+
+      {selectedWorker && (
+        <WorkerDetailModal
+          worker={selectedWorker}
+          onClose={() => setSelectedWorker(null)}
+          onLeaveLogged={() => {
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }
