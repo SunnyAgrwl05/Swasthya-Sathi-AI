@@ -32,6 +32,7 @@ function badge(pct) {
 function WorkerTable({
   workers = [],
   summary = [],
+  onRefresh,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -293,6 +294,7 @@ function WorkerTable({
         <WorkerDetailModal
           worker={selectedWorker}
           onClose={() => setSelectedWorker(null)}
+          onLeaveApplied={onRefresh}
         />
       )}
     </div>

@@ -1,6 +1,20 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { api } from "../api";
 
+function parseLocalDate(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function getTodayDate() {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
   const [history, setHistory] = useState(null);
   const [leaves, setLeaves] = useState([]);
@@ -13,9 +27,8 @@ export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
   const [viewMode, setViewMode] = useState("graph"); // "graph" or "tiles"
   const [hoveredDay, setHoveredDay] = useState(null);
 
-  const today = new Date().toISOString().split("T")[0];
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  const [startDate, setStartDate] = useState(getTodayDate);
+  const [endDate, setEndDate] = useState(getTodayDate);
   const [leaveType, setLeaveType] = useState("casual");
   const [reason, setReason] = useState("");
 
@@ -103,7 +116,7 @@ export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
     let currentWeek = [];
 
     days.forEach((dayObj) => {
-      const d = new Date(dayObj.date);
+      const d = parseLocalDate(dayObj.date);
       const dayOfWeek = (d.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
       currentWeek.push({ ...dayObj, dayOfWeek });
       if (dayOfWeek === 6 || currentWeek.length === 7) {
@@ -251,7 +264,7 @@ export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
 
                     {/* Columns of weeks */}
                     {commitGraphData.weeks.map((week, colIndex) => {
-                      const firstDay = week[0]?.date ? new Date(week[0].date) : null;
+                      const firstDay = parseLocalDate(week[0]?.date);
                       const monthLabel = firstDay ? firstDay.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
 
                       return (

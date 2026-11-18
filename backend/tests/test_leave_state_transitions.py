@@ -97,6 +97,11 @@ def test_leave_state_transitions(client_and_db):
     )
     assert len(records_after_reject) == 0
 
+    # Ensure attendance-history endpoint reflects 0 leave days
+    hist_resp = client.get(f"/api/workers/{worker.id}/attendance-history?days=30")
+    assert hist_resp.status_code == 200
+    assert hist_resp.json()["leave_days"] == 0
+
     # 3. Transition from Rejected back to Approved
     reapprove_resp = client.patch(
         f"/api/leaves/{leave_id}/status",

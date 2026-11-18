@@ -176,6 +176,9 @@ def create_leave(
     if leave.start_date > leave.end_date:
         raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
 
+    if (leave.end_date - leave.start_date).days > 365:
+        raise HTTPException(status_code=400, detail="Leave duration cannot exceed 365 days")
+
     db_leave = models.LeaveRecord(
         worker_id=leave.worker_id,
         start_date=leave.start_date,
@@ -275,7 +278,7 @@ def update_leave_status(
                         marked_by=req.approved_by,
                     )
                 )
-    elif new_status == "Rejected" and prev_status == "Approved":
+    elif new_status in {"Rejected", "Pending"} and prev_status == "Approved":
         for i in range(delta + 1):
             day = db_leave.start_date + datetime.timedelta(days=i)
             existing_att = (
@@ -322,6 +325,7 @@ def get_worker_attendance_history(
         db.query(models.LeaveRecord)
         .filter(
             models.LeaveRecord.worker_id == worker_id,
+            models.LeaveRecord.status == "Approved",
             models.LeaveRecord.end_date >= start_window,
             models.LeaveRecord.start_date <= today,
         )
