@@ -66,16 +66,85 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 _actions_taken: list[str] = []
 
 
-def _resolve_worker(db: Session, name: str):
-    """Fuzzy-match a spoken/typed worker name to a DB row."""
+class AmbiguousWorkerError(Exception):
+    """Raised when multiple workers match the query without sufficient qualification."""
+
+    def __init__(self, name: str, candidates: list[models.HealthWorker]):
+        self.name = name
+        self.candidates = candidates
+        options = ", ".join(f"{c.name} ({c.center or 'No Center'}, ID: {c.id})" for c in candidates)
+        super().__init__(
+            f"Multiple health workers found matching '{name}': {options}. "
+            "Please specify the center name or worker ID to disambiguate."
+        )
+
+
+def _resolve_worker(db: Session, name: str, center: str | None = None):
+    """Fuzzy-match a spoken/typed worker name to a DB row with collision protection."""
     workers = db.query(models.HealthWorker).all()
     if not workers:
         return None
-    names = {w.name.lower(): w for w in workers}
-    if name.lower() in names:
-        return names[name.lower()]
-    match = get_close_matches(name.lower(), names.keys(), n=1, cutoff=0.6)
-    return names[match[0]] if match else None
+
+    query = name.strip()
+    query_lower = query.lower()
+
+    # 1. Direct ID lookup if string is an integer
+    if query.isdigit():
+        w_by_id = db.query(models.HealthWorker).filter_by(id=int(query)).first()
+        if w_by_id:
+            return w_by_id
+
+    # 2. Check full combined string matching (e.g. "Pooja Singh (Danapur)" or "Pooja Singh Danapur")
+    for w in workers:
+        combo1 = f"{w.name} {w.center}".strip().lower()
+        combo2 = f"{w.name} ({w.center})".strip().lower()
+        if query_lower == combo1 or query_lower == combo2:
+            return w
+
+    # 3. Group by lowercased worker name
+    name_groups: dict[str, list[models.HealthWorker]] = {}
+    for w in workers:
+        key = w.name.strip().lower()
+        name_groups.setdefault(key, []).append(w)
+
+    target_candidates = None
+    if query_lower in name_groups:
+        target_candidates = name_groups[query_lower]
+    else:
+        # Check if query contains both name and center substring
+        for w in workers:
+            w_name_low = w.name.strip().lower()
+            w_center_low = (w.center or "").strip().lower()
+            if w_center_low and w_name_low in query_lower and w_center_low in query_lower:
+                return w
+        # Fuzzy match across unique names
+        matches = get_close_matches(query_lower, list(name_groups.keys()), n=1, cutoff=0.6)
+        if matches:
+            target_candidates = name_groups[matches[0]]
+
+    if not target_candidates:
+        return None
+
+    if len(target_candidates) == 1:
+        return target_candidates[0]
+
+    # Multiple candidates! Try disambiguation by center
+    if center:
+        c_low = center.strip().lower()
+        filtered = [c for c in target_candidates if c.center and c_low in c.center.lower()]
+        if len(filtered) == 1:
+            return filtered[0]
+        if filtered:
+            target_candidates = filtered
+
+    # Check if query_lower itself contains any candidate's center
+    center_matches = [
+        c for c in target_candidates if c.center and c.center.lower() in query_lower
+    ]
+    if len(center_matches) == 1:
+        return center_matches[0]
+
+    raise AmbiguousWorkerError(query, target_candidates)
 
 
 def _parse_date(date_str: str | None) -> datetime.date:
@@ -95,7 +164,13 @@ def _parse_date(date_str: str | None) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
-def mark_attendance(worker_name: str, status: str, date_str: str = "today", note: str = "") -> str:
+def mark_attendance(
+    worker_name: str,
+    status: str,
+    date_str: str = "today",
+    note: str = "",
+    center: str = "",
+) -> str:
     """Marks attendance for a health worker on a given date.
 
     Args:
@@ -103,11 +178,15 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
         status: One of 'present', 'absent', 'half-day', 'leave'.
         date_str: Date in YYYY-MM-DD, or 'today' / 'yesterday'.
         note: Optional short remark, e.g. reason for absence.
+        center: Optional center/sub-center name to disambiguate workers sharing the same name.
     """
     db = SessionLocal()
 
     try:
-        worker = _resolve_worker(db, worker_name)
+        try:
+            worker = _resolve_worker(db, worker_name, center=center if center else None)
+        except AmbiguousWorkerError as e:
+            return str(e)
 
         if not worker:
             return (
@@ -177,20 +256,24 @@ Ensure all worker details are complete for comprehensive reporting.
         db.close()
 
 
-def get_attendance_summary(worker_name: str = "", days: int = 30) -> str:
+def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = "") -> str:
     """Gets an attendance summary (present/absent/half-day/leave counts) for one worker
     or, if worker_name is empty, for every worker, over the last N days.
 
     Args:
         worker_name: Worker name, or leave blank for all workers.
         days: Lookback window in days (default 30).
+        center: Optional center/sub-center name to disambiguate workers sharing the same name.
     """
     db = SessionLocal()
     try:
         since = datetime.date.today() - datetime.timedelta(days=days)
         query = db.query(models.HealthWorker)
         if worker_name:
-            w = _resolve_worker(db, worker_name)
+            try:
+                w = _resolve_worker(db, worker_name, center=center if center else None)
+            except AmbiguousWorkerError as e:
+                return str(e)
             if not w:
                 return f"No health worker found matching '{worker_name}'."
             query = query.filter(models.HealthWorker.id == w.id)
@@ -402,25 +485,8 @@ def generate_daily_broadcast() -> str:
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
             lines.append("")
-
-            for worker in workers:
-                pct = round(
-                    sum(
-                        1
-                        for r in worker.records
-                        if r.date >= since and r.status == "present"
-                    )
-                    / max(
-                        1,
-                        len([r for r in worker.records if r.date >= since]),
-                    )
-                    * 100,
-                    1,
-                )
-
-                if pct < 75:
-                    lines.append(f"• {worker.name} ({pct}%)")
-
+            for item in flagged:
+                lines.append(f"• {item}")
             lines.append("")
 
         lines.append("✅ Operational Recommendation")
