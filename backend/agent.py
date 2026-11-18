@@ -10,6 +10,7 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
+import contextvars
 import datetime
 import os
 from difflib import get_close_matches
@@ -63,7 +64,49 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
-_actions_taken: list[str] = []
+# Using ContextVar ensures request-level isolation across async coroutines and worker threads.
+_actions_context: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
+    "_actions_context", default=[]
+)
+
+
+def record_action(action: str):
+    """Record an action in the current request's isolated context."""
+    current = list(_actions_context.get())
+    current.append(action)
+    _actions_context.set(current)
+
+
+def get_recorded_actions() -> list[str]:
+    """Retrieve recorded actions for the current request context."""
+    return list(_actions_context.get())
+
+
+def clear_recorded_actions():
+    """Reset recorded actions for the current request context."""
+    _actions_context.set([])
+
+
+class _ActionsProxy(list):
+    """Backward-compatible proxy that delegates all operations to _actions_context."""
+
+    def append(self, item: str):
+        record_action(item)
+
+    def __iter__(self):
+        return iter(get_recorded_actions())
+
+    def __len__(self):
+        return len(get_recorded_actions())
+
+    def __bool__(self):
+        return bool(get_recorded_actions())
+
+    def clear(self):
+        clear_recorded_actions()
+
+
+_actions_taken = _ActionsProxy()
 
 
 def _resolve_worker(db: Session, name: str):
@@ -932,9 +975,7 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     """
     Main AI Agent runtime.
     """
-
-    global _actions_taken
-    _actions_taken = []
+    clear_recorded_actions()
 
     try:
         last_error = None
@@ -963,10 +1004,12 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 except Exception:
                     tool_output = ""
 
+                actions = get_recorded_actions()
+
                 # If Gemini returned no text but a tool executed,
                 # show executed actions.
-                if not tool_output and _actions_taken:
-                    tool_output = "\n".join(_actions_taken)
+                if not tool_output and actions:
+                    tool_output = "\n".join(actions)
 
                 # If nothing came back, try next key.
                 elif not tool_output:
@@ -977,10 +1020,10 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 print("USER:", user_message)
                 print("RESPONSE:")
                 print(tool_output)
-                print("ACTIONS:", _actions_taken)
+                print("ACTIONS:", actions)
                 print("====================================\n")
 
-                return tool_output, list(_actions_taken)
+                return tool_output, list(actions)
 
             except Exception as e:
                 print(f"[Gemini Failed] {key[:10]}... -> {e}")
