@@ -86,8 +86,14 @@ export default function ChatAgent() {
       const res = await api.sendChat(msg)
 
       setMessages((m) => [
-      ...m,
-      { role: 'agent', text: res.reply, actions: res.actions_taken || [], language: res.language || "hi" },
+        ...m,
+        {
+          role: 'agent',
+          text: res.reply,
+          actions: res.actions_taken || [],
+          language: res.language || "hi",
+          safety: res.hallucination_check || null,
+        },
       ])
     } catch {
       setMessages((m) => [
@@ -156,10 +162,29 @@ Ask me:
                 }`}
             >
               {m.role === "agent" ? (
-                <div className="prose prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {m.text}
-                  </ReactMarkdown>
+                <div>
+                  {m.safety?.is_flagged && (
+                    <div
+                      className={`mb-3 p-2.5 rounded-xl border text-xs leading-relaxed ${
+                        m.safety.risk_level === 'HIGH'
+                          ? 'bg-red-500/15 border-red-500/30 text-red-200'
+                          : 'bg-amber-500/15 border-amber-500/30 text-amber-200'
+                      }`}
+                    >
+                      <div className="font-semibold flex items-center gap-1.5 mb-1">
+                        <span>{m.safety.risk_level === 'HIGH' ? '⚠️ High Clinical Caution' : 'ℹ️ Medical Advisory'}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/10 ml-auto">
+                          Confidence: {Math.round((m.safety.confidence_score || 0) * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-[11px] opacity-90">{m.safety.warning_message}</p>
+                    </div>
+                  )}
+                  <div className="prose prose-invert max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {m.text}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               ) : (
                 <div className="whitespace-pre-wrap">

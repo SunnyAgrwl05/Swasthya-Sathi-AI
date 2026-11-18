@@ -14,7 +14,7 @@ from agent import (
     generate_weekly_insights,
 )
 from database import engine, get_db
-from rag import RAGRetrievalResult, rag_engine
+from hallucination_detector import detect_hallucination
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -24,10 +24,6 @@ app = FastAPI(
 )
 class WeeklyInsightsRequest(BaseModel):
     language: str = "hi"
-
-class RAGQueryRequest(BaseModel):
-    query: str
-    top_k: int = 2
 
 app.add_middleware(
     CORSMiddleware,
@@ -227,6 +223,13 @@ def chat(
     end_time = time.time()
     exec_time = int((end_time - start_time) * 1000)
 
+    # Perform automated hallucination and clinical safety assessment
+    check_result = detect_hallucination(
+        query=req.message,
+        response=reply,
+        context=req.context,
+    )
+
     db.add(
         models.ChatLog(
             role="agent",
@@ -240,7 +243,7 @@ def chat(
             response=reply,
             tools_used=", ".join(actions) if actions else None,
             execution_time_ms=exec_time,
-            status="Success",
+            status="Flagged" if check_result.is_flagged else "Success",
         )
     )
 
@@ -249,7 +252,22 @@ def chat(
     return schemas.ChatResponse(
         reply=reply,
         actions_taken=actions,
+        hallucination_check=schemas.HallucinationCheckOut(**check_result.to_dict()),
     )
+
+
+@app.post("/api/safety/check-hallucination", response_model=schemas.HallucinationCheckOut)
+def check_hallucination_endpoint(req: schemas.HallucinationCheckRequest):
+    """
+    Standalone endpoint to verify medical text and calculate confidence / hallucination risk.
+    """
+    result = detect_hallucination(
+        query=req.query,
+        response=req.response,
+        context=req.context,
+        retrieval_score=req.retrieval_score,
+    )
+    return schemas.HallucinationCheckOut(**result.to_dict())
 
 
 # =====================================================
@@ -291,6 +309,18 @@ def weekly_insights_post(request: WeeklyInsightsRequest):
     }
 
 
-@app.post("/api/rag/query", response_model=RAGRetrievalResult)
-def rag_query(request: RAGQueryRequest):
-    return rag_engine.retrieve(query=request.query, top_k=request.top_k)
+# =====================================================
+# PUBLIC HEALTH KNOWLEDGE BASE (RAG)
+# =====================================================
+
+@app.get("/api/knowledge/search")
+def search_knowledge(q: str = ""):
+    from knowledge.rag_service import get_health_knowledge_base
+
+    if not q.strip():
+        return {"query": q, "results": []}
+
+    kb = get_health_knowledge_base()
+    results = kb.search(q, top_k=3)
+    return {"query": q, "results": results}
+

@@ -1,0 +1,71 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import DailyBroadcast from "./DailyBroadcast";
+import { api } from "../api";
+
+vi.mock("../api", () => ({
+  api: {
+    getDailyBroadcast: vi.fn(),
+  },
+}));
+
+describe("DailyBroadcast Component", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders initial state with heading and generate button", () => {
+    render(<DailyBroadcast />);
+
+    expect(screen.getByText("📢 Daily Broadcast")).toBeInTheDocument();
+    expect(
+      screen.getByText("AI-generated daily operational update")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "✨ Generate Today's Update" })
+    ).toBeInTheDocument();
+  });
+
+  it("generates broadcast successfully and displays formatted message and WhatsApp link", async () => {
+    const mockMessage = "*Daily Health Ops Update*\nAll 15 centers active.\nAttendance rate: 94%.";
+    api.getDailyBroadcast.mockResolvedValueOnce({ message: mockMessage });
+
+    render(<DailyBroadcast />);
+
+    const generateBtn = screen.getByRole("button", {
+      name: "✨ Generate Today's Update",
+    });
+    fireEvent.click(generateBtn);
+
+    expect(screen.getByText("Generating...")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("Daily Health Ops Update")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("All 15 centers active.")).toBeInTheDocument();
+    expect(screen.getByText("Attendance rate: 94%.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "🔄 Regenerate" })).toBeInTheDocument();
+
+    const waLink = screen.getByRole("link", { name: /Share on WhatsApp/i });
+    expect(waLink).toBeInTheDocument();
+    expect(waLink.getAttribute("href")).toContain("https://wa.me/?text=");
+  });
+
+  it("displays error message when broadcast API call fails", async () => {
+    api.getDailyBroadcast.mockRejectedValueOnce(new Error("Network Error"));
+
+    render(<DailyBroadcast />);
+
+    const generateBtn = screen.getByRole("button", {
+      name: "✨ Generate Today's Update",
+    });
+    fireEvent.click(generateBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Backend se connect nahi ho pa raha.")
+      ).toBeInTheDocument();
+    });
+  });
+});
