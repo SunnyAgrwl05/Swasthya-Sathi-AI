@@ -67,6 +67,14 @@ def create_worker(worker: schemas.WorkerCreate, db: Session = Depends(get_db)):
     return db_worker
 
 
+@app.get("/api/workers/{worker_id}", response_model=schemas.WorkerOut)
+def get_worker(worker_id: int, db: Session = Depends(get_db)):
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    return worker
+
+
 @app.delete("/api/workers/{worker_id}")
 def delete_worker(worker_id: int, db: Session = Depends(get_db)):
     worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
@@ -150,6 +158,89 @@ def create_attendance(
     db.refresh(db_record)
 
     return db_record
+
+
+# =====================================================
+# LEAVES & ABSENCE MANAGEMENT
+# =====================================================
+
+@app.post("/api/leaves", response_model=schemas.LeaveOut)
+def create_leave(
+    leave: schemas.LeaveCreate,
+    db: Session = Depends(get_db),
+):
+    worker = db.query(models.HealthWorker).filter_by(id=leave.worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    if leave.start_date > leave.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail="start_date cannot be after end_date",
+        )
+
+    db_leave = models.LeaveRecord(
+        worker_id=leave.worker_id,
+        start_date=leave.start_date,
+        end_date=leave.end_date,
+        leave_type=leave.leave_type,
+        reason=leave.reason,
+        approved_by=leave.approved_by,
+    )
+    db.add(db_leave)
+
+    # Auto-populate daily AttendanceRecord entries as leave for the specified range
+    curr = leave.start_date
+    delta = datetime.timedelta(days=1)
+    note_text = leave.reason or f"Approved {leave.leave_type} leave"
+
+    while curr <= leave.end_date:
+        existing = (
+            db.query(models.AttendanceRecord)
+            .filter_by(worker_id=leave.worker_id, date=curr)
+            .first()
+        )
+        if existing:
+            existing.status = "leave"
+            existing.note = note_text
+            existing.marked_by = leave.approved_by or "leave_system"
+        else:
+            rec = models.AttendanceRecord(
+                worker_id=leave.worker_id,
+                date=curr,
+                status="leave",
+                note=note_text,
+                marked_by=leave.approved_by or "leave_system",
+            )
+            db.add(rec)
+        curr += delta
+
+    db.add(
+        models.AuditLog(
+            action="Log Leave",
+            entity="LeaveRecord",
+            performed_by=leave.approved_by or "leave_system",
+            description=(
+                f"Logged {leave.leave_type} leave for worker_id {leave.worker_id} "
+                f"from {leave.start_date} to {leave.end_date}"
+            ),
+        )
+    )
+
+    db.commit()
+    db.refresh(db_leave)
+    return db_leave
+
+
+@app.get("/api/leaves", response_model=list[schemas.LeaveOut])
+def get_leaves(
+    worker_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    q = db.query(models.LeaveRecord)
+    if worker_id:
+        q = q.filter_by(worker_id=worker_id)
+    return q.order_by(models.LeaveRecord.start_date.desc()).all()
 
 
 # =====================================================
