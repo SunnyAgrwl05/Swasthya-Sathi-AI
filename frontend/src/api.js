@@ -32,6 +32,28 @@ export const api = {
             language,
         }),
     }),
+  getWorkerAttendanceHistory: (workerId, days = 30) =>
+    req(`/api/workers/${workerId}/attendance-history?days=${days}`),
+  applyLeave: (payload) =>
+    req('/api/leaves', { method: 'POST', body: JSON.stringify(payload) }),
+  getLeaves: (workerId = null) =>
+    req(`/api/leaves${workerId ? `?worker_id=${workerId}` : ''}`),
+  updateLeaveStatus: (leaveId, status, approvedBy = "Supervisor") =>
+    req(`/api/leaves/${leaveId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, approved_by: approvedBy }),
+    }),
+  getSMSQueue: (status = null) =>
+    req(`/api/notifications/queue${status ? `?status=${status}` : ""}`),
+  processSMSQueue: () =>
+    req("/api/notifications/queue/process", { method: "POST" }),
+  dispatchSMSAlerts: (payload = {}) =>
+    req('/api/notifications/dispatch-sms', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getNotificationLogs: (limit = 20) =>
+    req(`/api/notifications/logs?limit=${limit}`),
 }
 
 
