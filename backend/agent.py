@@ -13,6 +13,7 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 import contextvars
 import datetime
 import os
+import re
 from difflib import get_close_matches
 
 import google.generativeai as genai
@@ -86,53 +87,120 @@ def get_actions() -> list[str]:
         return _actions_taken
 
 
-def _resolve_worker(db: Session, name: str):
-    """Fuzzy-match a spoken/typed worker name, ID, or composite (name + center) to a DB row."""
+class AmbiguousWorkerError(Exception):
+    """Raised when a worker name matches multiple records without enough context."""
+
+    def __init__(self, name: str, candidates: list[models.HealthWorker]):
+        self.name = name
+        self.candidates = candidates
+        options = ", ".join(
+            f"{worker.name} ({worker.center or 'No Center'}, ID: {worker.id})"
+            for worker in candidates
+        )
+        super().__init__(
+            f"Multiple health workers found matching '{name}': {options}. "
+            "Please specify the center name or worker ID to disambiguate."
+        )
+
+
+def _resolve_worker(db: Session, name: str, center: str | None = None):
+    """Resolve a worker by ID, exact/composite name, or unambiguous fuzzy match.
+
+    Duplicate names are never resolved by choosing the first database row.
+    Callers receive AmbiguousWorkerError and can ask the supervisor to clarify.
+    """
     workers = db.query(models.HealthWorker).all()
     if not workers:
         return None
 
-    name_lower = name.lower().strip()
+    query = (name or "").strip()
+    query_lower = query.lower()
+    if not query_lower:
+        return None
 
-    # 1. Direct ID match (e.g. "#2" or "id: 2" or integer string)
-    if name_lower.startswith("#") and name_lower[1:].isdigit():
-        wid = int(name_lower[1:])
-        for w in workers:
-            if w.id == wid:
-                return w
+    # Support IDs entered as "12", "#12", or "id: 12".
+    id_text = query_lower.removeprefix("#").removeprefix("id:").strip()
+    if id_text.isdigit():
+        worker = db.query(models.HealthWorker).filter_by(id=int(id_text)).first()
+        if worker:
+            return worker
 
-    # 2. Match composite name with center e.g. "Pooja Singh (Danapur)" or "Pooja Singh - Danapur"
-    for w in workers:
-        composite1 = f"{w.name} ({w.center})".lower()
-        composite2 = f"{w.name} - {w.center}".lower()
-        if composite1 == name_lower or composite2 == name_lower:
-            return w
-        if w.name.lower() in name_lower and w.center.lower() in name_lower:
-            return w
+    # Exact composite queries are the safest way to resolve duplicate names.
+    composite_matches = [
+        worker
+        for worker in workers
+        if query_lower in {
+            f"{worker.name} {worker.center or ''}".strip().lower(),
+            f"{worker.name} ({worker.center or ''})".strip().lower(),
+            f"{worker.name} - {worker.center or ''}".strip().lower(),
+        }
+    ]
+    if len(composite_matches) == 1:
+        return composite_matches[0]
+    if len(composite_matches) > 1:
+        raise AmbiguousWorkerError(query, composite_matches)
 
-    # 3. Exact name match across multiple candidates
-    exact_matches = [w for w in workers if w.name.lower() == name_lower]
-    if len(exact_matches) == 1:
-        return exact_matches[0]
-    elif len(exact_matches) > 1:
-        # Check if query contains any of their center names for disambiguation
-        for w in exact_matches:
-            if w.center.lower() in name_lower:
-                return w
-        # Default to first worker if no center disambiguation provided
-        return exact_matches[0]
+    name_groups: dict[str, list[models.HealthWorker]] = {}
+    for worker in workers:
+        name_groups.setdefault(worker.name.strip().lower(), []).append(worker)
 
-    # 4. Fuzzy matching across names and center-disambiguated names
-    name_map = {}
-    for w in workers:
-        if w.name.lower() not in name_map:
-            name_map[w.name.lower()] = w
-        name_map[f"{w.name.lower()} ({w.center.lower()})"] = w
-        name_map[f"{w.name.lower()} - {w.center.lower()}"] = w
+    candidates = name_groups.get(query_lower)
+    if candidates is None:
+        # A query may contain both a worker name and its center without punctuation.
+        combined_matches = [
+            worker
+            for worker in workers
+            if worker.name.strip().lower() in query_lower
+            and any(
+                token in query_lower
+                for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+                if len(token) > 2
+            )
+        ]
+        if len(combined_matches) == 1:
+            return combined_matches[0]
+        if len(combined_matches) > 1:
+            raise AmbiguousWorkerError(query, combined_matches)
 
-    match = get_close_matches(name_lower, name_map.keys(), n=1, cutoff=0.6)
-    return name_map[match[0]] if match else None
+        # Fuzzy matching is performed against unique names, then ambiguity is
+        # checked against every worker sharing the selected name.
+        matches = get_close_matches(query_lower, list(name_groups), n=1, cutoff=0.6)
+        if not matches:
+            return None
+        candidates = name_groups[matches[0]]
 
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # If the caller supplies a center, use it only when it identifies one worker.
+    if center:
+        center_lower = center.strip().lower()
+        center_matches = [
+            worker
+            for worker in candidates
+            if center_lower and center_lower in (worker.center or "").lower()
+        ]
+        if len(center_matches) == 1:
+            return center_matches[0]
+        if center_matches:
+            candidates = center_matches
+
+    # Also accept center text included in the worker-name query.
+    query_center_matches = [
+        worker
+        for worker in candidates
+        if any(
+            token in query_lower
+            for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+            if len(token) > 2
+        )
+    ]
+    if len(query_center_matches) == 1:
+        return query_center_matches[0]
+    if query_center_matches:
+        candidates = query_center_matches
+
+    raise AmbiguousWorkerError(query, candidates)
 
 def _parse_date(date_str: str | None) -> datetime.date:
     if not date_str or date_str.lower() == "today":
@@ -151,7 +219,13 @@ def _parse_date(date_str: str | None) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
-def mark_attendance(worker_name: str, status: str, date_str: str = "today", note: str = "") -> str:
+def mark_attendance(
+    worker_name: str,
+    status: str,
+    date_str: str = "today",
+    note: str = "",
+    center: str = "",
+) -> str:
     """Marks attendance for a health worker on a given date.
 
     Args:
@@ -159,11 +233,15 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
         status: One of 'present', 'absent', 'half-day', 'leave'.
         date_str: Date in YYYY-MM-DD, or 'today' / 'yesterday'.
         note: Optional short remark, e.g. reason for absence.
+        center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
 
     try:
-        worker = _resolve_worker(db, worker_name)
+        try:
+            worker = _resolve_worker(db, worker_name, center=center or None)
+        except AmbiguousWorkerError as error:
+            return str(error)
 
         if not worker:
             return (
@@ -233,20 +311,24 @@ Ensure all worker details are complete for comprehensive reporting.
         db.close()
 
 
-def get_attendance_summary(worker_name: str = "", days: int = 30) -> str:
+def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = "") -> str:
     """Gets an attendance summary (present/absent/half-day/leave counts) for one worker
     or, if worker_name is empty, for every worker, over the last N days.
 
     Args:
         worker_name: Worker name, or leave blank for all workers.
         days: Lookback window in days (default 30).
+        center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
     try:
         since = datetime.date.today() - datetime.timedelta(days=days)
         query = db.query(models.HealthWorker)
         if worker_name:
-            w = _resolve_worker(db, worker_name)
+            try:
+                w = _resolve_worker(db, worker_name, center=center or None)
+            except AmbiguousWorkerError as error:
+                return str(error)
             if not w:
                 return f"No health worker found matching '{worker_name}'."
             query = query.filter(models.HealthWorker.id == w.id)
@@ -973,7 +1055,7 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     """
 
     actions: list[str] = []
-    token = _actions_var.set(actions)
+    _actions_var.set(actions)
     global _actions_taken
     _actions_taken = actions
 
