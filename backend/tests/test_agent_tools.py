@@ -1,5 +1,4 @@
 from unittest.mock import patch
-from datetime import date
 import models
 from agent import (
     _resolve_worker,
