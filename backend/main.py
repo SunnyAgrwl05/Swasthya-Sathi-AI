@@ -14,6 +14,7 @@ from agent import (
     generate_weekly_insights,
 )
 from database import engine, get_db
+from hallucination_detector import get_detector
 from hallucination_detector import detect_hallucination
 from sms_dispatcher import (
     dispatch_batch_broadcast_sms,
@@ -27,6 +28,7 @@ app = FastAPI(
     title="Swasthya Sathi AI",
     version="1.0.0",
 )
+
 class WeeklyInsightsRequest(BaseModel):
     language: str = "hi"
 
@@ -524,9 +526,16 @@ def chat(
 
     db.commit()
 
+    # Run hallucination / medical-safety check on every AI reply
+    detector = get_detector()
+    safety_report = detector.assess_response(reply, req.message)
+
     return schemas.ChatResponse(
         reply=reply,
         actions_taken=actions,
+        safety_warning=safety_report.warning_message,
+        is_flagged=safety_report.is_flagged,
+        confidence_score=safety_report.confidence_score,
         hallucination_check=schemas.HallucinationCheckOut(**check_result.to_dict()),
     )
 
@@ -543,6 +552,22 @@ def check_hallucination_endpoint(req: schemas.HallucinationCheckRequest):
         retrieval_score=req.retrieval_score,
     )
     return schemas.HallucinationCheckOut(**result.to_dict())
+
+
+# =====================================================
+# SAFETY VERIFICATION
+# =====================================================
+
+@app.post("/api/safety/verify", response_model=schemas.SafetyVerificationResponse)
+def verify_response_safety(req: schemas.SafetyVerificationRequest):
+    """
+    Standalone endpoint to run the hallucination/medical-safety check on any
+    AI-generated text.  Useful for frontend or integration testing.
+    """
+    from hallucination_detector import verify_medical_response  # local import keeps startup clean
+
+    result = verify_medical_response(req.response_text, req.query or "")
+    return schemas.SafetyVerificationResponse(**result)
 
 
 # =====================================================
