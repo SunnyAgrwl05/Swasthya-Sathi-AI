@@ -15,6 +15,11 @@ from agent import (
 )
 from database import engine, get_db
 from hallucination_detector import detect_hallucination
+from sms_dispatcher import (
+    dispatch_batch_broadcast_sms,
+    enqueue_sms_alert,
+    process_offline_sms_queue,
+)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -153,6 +158,243 @@ def create_attendance(
 
 
 # =====================================================
+# LEAVE & ATTENDANCE HISTORY (HEATMAP)
+# =====================================================
+
+@app.post("/api/leaves", response_model=schemas.LeaveOut)
+def create_leave(
+    leave: schemas.LeaveCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Applies an approved leave date range for a health worker, auto-populating daily attendance records.
+    """
+    worker = db.query(models.HealthWorker).filter_by(id=leave.worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    if leave.start_date > leave.end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
+    if (leave.end_date - leave.start_date).days > 365:
+        raise HTTPException(status_code=400, detail="Leave duration cannot exceed 365 days")
+
+    db_leave = models.LeaveRecord(
+        worker_id=leave.worker_id,
+        start_date=leave.start_date,
+        end_date=leave.end_date,
+        leave_type=leave.leave_type.lower(),
+        reason=leave.reason,
+        status="Approved",
+        approved_by=leave.approved_by,
+    )
+    db.add(db_leave)
+
+    delta = (leave.end_date - leave.start_date).days
+    note_text = f"Leave ({leave.leave_type.capitalize()}): {leave.reason or 'Approved'}"
+    for i in range(delta + 1):
+        day = leave.start_date + datetime.timedelta(days=i)
+        existing_att = (
+            db.query(models.AttendanceRecord)
+            .filter_by(worker_id=leave.worker_id, date=day)
+            .first()
+        )
+        if existing_att:
+            existing_att.status = "leave"
+            existing_att.note = note_text
+            existing_att.marked_by = leave.approved_by
+        else:
+            new_att = models.AttendanceRecord(
+                worker_id=leave.worker_id,
+                date=day,
+                status="leave",
+                note=note_text,
+                marked_by=leave.approved_by,
+            )
+            db.add(new_att)
+
+    db.commit()
+    db.refresh(db_leave)
+    return db_leave
+
+
+@app.get("/api/leaves", response_model=list[schemas.LeaveOut])
+def get_leaves(
+    worker_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Retrieves leave records with optional worker filter."""
+    q = db.query(models.LeaveRecord)
+    if worker_id:
+        q = q.filter_by(worker_id=worker_id)
+    return q.order_by(models.LeaveRecord.start_date.desc()).all()
+
+
+@app.patch("/api/leaves/{leave_id}/status", response_model=schemas.LeaveOut)
+def update_leave_status(
+    leave_id: int,
+    req: schemas.LeaveStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Approves or rejects a leave request, updating worker attendance records accordingly.
+    """
+    db_leave = db.query(models.LeaveRecord).filter_by(id=leave_id).first()
+    if not db_leave:
+        raise HTTPException(status_code=404, detail="Leave record not found")
+
+    new_status = req.status.capitalize()
+    if new_status not in {"Approved", "Rejected", "Pending"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid status. Must be Approved, Rejected, or Pending.",
+        )
+
+    prev_status = db_leave.status
+    db_leave.status = new_status
+    db_leave.approved_by = req.approved_by
+
+    delta = (db_leave.end_date - db_leave.start_date).days
+    if new_status == "Approved":
+        note_text = f"Leave ({db_leave.leave_type.capitalize()}): Approved"
+        for i in range(delta + 1):
+            day = db_leave.start_date + datetime.timedelta(days=i)
+            existing_att = (
+                db.query(models.AttendanceRecord)
+                .filter_by(worker_id=db_leave.worker_id, date=day)
+                .first()
+            )
+            if existing_att:
+                existing_att.status = "leave"
+                existing_att.note = note_text
+                existing_att.marked_by = req.approved_by
+            else:
+                db.add(
+                    models.AttendanceRecord(
+                        worker_id=db_leave.worker_id,
+                        date=day,
+                        status="leave",
+                        note=note_text,
+                        marked_by=req.approved_by,
+                    )
+                )
+    elif new_status in {"Rejected", "Pending"} and prev_status == "Approved":
+        for i in range(delta + 1):
+            day = db_leave.start_date + datetime.timedelta(days=i)
+            existing_att = (
+                db.query(models.AttendanceRecord)
+                .filter_by(worker_id=db_leave.worker_id, date=day)
+                .first()
+            )
+            if existing_att and existing_att.status == "leave":
+                db.delete(existing_att)
+
+    db.commit()
+    db.refresh(db_leave)
+    return db_leave
+
+
+@app.get("/api/workers/{worker_id}/attendance-history", response_model=schemas.WorkerAttendanceHistoryOut)
+def get_worker_attendance_history(
+    worker_id: int,
+    days: int = 30,
+    db: Session = Depends(get_db),
+):
+    """
+    Returns an indexed daily attendance history for 30-day heatmap visualization.
+    """
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    today = datetime.date.today()
+    start_window = today - datetime.timedelta(days=days - 1)
+
+    records = (
+        db.query(models.AttendanceRecord)
+        .filter(
+            models.AttendanceRecord.worker_id == worker_id,
+            models.AttendanceRecord.date >= start_window,
+            models.AttendanceRecord.date <= today,
+        )
+        .all()
+    )
+    records_by_date = {r.date: r for r in records}
+
+    leaves = (
+        db.query(models.LeaveRecord)
+        .filter(
+            models.LeaveRecord.worker_id == worker_id,
+            models.LeaveRecord.status == "Approved",
+            models.LeaveRecord.end_date >= start_window,
+            models.LeaveRecord.start_date <= today,
+        )
+        .all()
+    )
+
+    day_items = []
+    present_cnt = 0
+    absent_cnt = 0
+    leave_cnt = 0
+
+    for i in range(days):
+        current_date = start_window + datetime.timedelta(days=i)
+        rec = records_by_date.get(current_date)
+
+        leave_match = next(
+            (lv for lv in leaves if lv.start_date <= current_date <= lv.end_date), None
+        )
+
+        if rec:
+            status = rec.status
+            note = rec.note
+            marked_by = rec.marked_by
+            l_type = leave_match.leave_type if leave_match else None
+        elif leave_match:
+            status = "leave"
+            note = f"Leave ({leave_match.leave_type.capitalize()}): {leave_match.reason or 'Approved'}"
+            marked_by = leave_match.approved_by
+            l_type = leave_match.leave_type
+        else:
+            status = "unmarked"
+            note = None
+            marked_by = None
+            l_type = None
+
+        if status == "present":
+            present_cnt += 1
+        elif status == "absent":
+            absent_cnt += 1
+        elif status == "leave":
+            leave_cnt += 1
+
+        day_items.append(
+            schemas.AttendanceHistoryDay(
+                date=current_date,
+                status=status,
+                note=note,
+                marked_by=marked_by,
+                leave_type=l_type,
+            )
+        )
+
+    attendance_pct = round((present_cnt / days) * 100, 1) if days > 0 else 0.0
+
+    return schemas.WorkerAttendanceHistoryOut(
+        worker_id=worker.id,
+        name=worker.name,
+        role=worker.role,
+        center=worker.center,
+        days=day_items,
+        total_days=days,
+        present_days=present_cnt,
+        absent_days=absent_cnt,
+        leave_days=leave_cnt,
+        attendance_pct=attendance_pct,
+    )
+
+
+# =====================================================
 # ANALYTICS
 # =====================================================
 
@@ -275,7 +517,7 @@ def check_hallucination_endpoint(req: schemas.HallucinationCheckRequest):
 # =====================================================
 
 @app.get("/api/broadcast/daily")
-def daily_broadcast(db: Session = Depends(get_db)):
+def daily_broadcast(dispatch_sms: bool = False, db: Session = Depends(get_db)):
     msg = generate_daily_broadcast()
     workers = db.query(models.HealthWorker).all()
     for w in workers:
@@ -289,9 +531,114 @@ def daily_broadcast(db: Session = Depends(get_db)):
             )
         )
     db.commit()
+
+    sms_summary = None
+    if dispatch_sms:
+        sms_summary = dispatch_batch_broadcast_sms(db, workers, msg)
+
     return {
-        "message": msg
+        "message": msg,
+        "sms_dispatched": dispatch_sms,
+        "sms_summary": sms_summary,
     }
+
+
+@app.post("/api/notifications/dispatch-sms", response_model=schemas.SMSDispatchSummaryOut)
+def dispatch_sms_endpoint(
+    req: schemas.SMSDispatchRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Dispatches automated SMS alerts to offline field workers with delivery audit logging.
+    """
+    text = req.message or generate_daily_broadcast()
+
+    if req.target == "worker" and req.worker_id:
+        worker = db.query(models.HealthWorker).filter_by(id=req.worker_id).first()
+        if not worker:
+            raise HTTPException(status_code=404, detail="Worker not found")
+        workers = [worker]
+    elif req.target == "pending":
+        today = datetime.date.today()
+        marked_ids = {
+            r.worker_id
+            for r in db.query(models.AttendanceRecord.worker_id).filter_by(date=today).all()
+        }
+        workers = db.query(models.HealthWorker).filter(models.HealthWorker.id.notin_(marked_ids)).all()
+    else:
+        workers = db.query(models.HealthWorker).all()
+
+    summary = dispatch_batch_broadcast_sms(db, workers, text)
+    return schemas.SMSDispatchSummaryOut(
+        status="completed",
+        total_recipients=summary["total"],
+        sent=summary["sent"],
+        failed=summary["failed"],
+        channel="SMS",
+        errors=summary.get("errors", []),
+    )
+
+
+@app.get("/api/notifications/logs", response_model=list[schemas.NotificationLogOut])
+def get_notification_logs(
+    notification_type: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieves recent dispatched notification audit records across SMS, WhatsApp, etc.
+    """
+    q = db.query(models.NotificationLog)
+    if notification_type:
+        q = q.filter(models.NotificationLog.notification_type == notification_type)
+    if status:
+        q = q.filter(models.NotificationLog.status == status)
+
+    return q.order_by(models.NotificationLog.id.desc()).limit(limit).all()
+
+
+@app.get("/api/notifications/queue", response_model=list[schemas.SMSQueueItemOut])
+def get_sms_queue(
+    status: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """Retrieves items from the offline SMS dispatch queue."""
+    q = db.query(models.SMSQueueItem)
+    if status:
+        q = q.filter_by(status=status)
+    return q.order_by(models.SMSQueueItem.id.desc()).limit(limit).all()
+
+
+@app.post("/api/notifications/queue/process", response_model=schemas.SMSQueueProcessSummary)
+def process_sms_queue_endpoint(
+    db: Session = Depends(get_db),
+):
+    """Processes eligible pending SMS alerts in the offline dispatch queue."""
+    summary = process_offline_sms_queue(db)
+    return schemas.SMSQueueProcessSummary(**summary)
+
+
+@app.post("/api/notifications/queue/enqueue", response_model=schemas.SMSQueueItemOut)
+def enqueue_sms_endpoint(
+    worker_name: str,
+    phone: str,
+    message: str,
+    max_retries: int = 3,
+    retry_interval_seconds: int = 60,
+    db: Session = Depends(get_db),
+):
+    """Enqueues an SMS message into the offline queue."""
+    item = enqueue_sms_alert(
+        db=db,
+        phone=phone,
+        message=message,
+        worker_name=worker_name,
+        max_retries=max_retries,
+        retry_interval_seconds=retry_interval_seconds,
+    )
+    return item
 
 
 @app.get("/api/insights/weekly")

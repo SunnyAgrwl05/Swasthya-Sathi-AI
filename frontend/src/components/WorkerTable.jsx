@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from "react";
+import WorkerDetailModal from "./WorkerDetailModal";
 
 function badge(pct) {
   if (pct >= 85) {
@@ -31,10 +32,12 @@ function badge(pct) {
 function WorkerTable({
   workers = [],
   summary = [],
+  onRefresh,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [centerFilter, setCenterFilter] = useState("All");
+  const [selectedWorker, setSelectedWorker] = useState(null);
 
   const byId = useMemo(
     () =>
@@ -221,6 +224,7 @@ function WorkerTable({
               <th className="py-3 px-2">Center</th>
               <th className="py-3 px-2">30 Days</th>
               <th className="py-3 px-2">Status</th>
+              <th className="py-3 px-2">Timeline</th>
             </tr>
           </thead>
 
@@ -256,6 +260,16 @@ function WorkerTable({
                       {status.text}
                     </span>
                   </td>
+
+                  <td className="py-3 px-2 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWorker(worker)}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 border border-line hover:border-pulse/40 hover:text-pulse transition-colors cursor-pointer"
+                    >
+                      📊 Heatmap & Leave
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -263,7 +277,7 @@ function WorkerTable({
             {filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="py-10 text-center text-white/40"
                 >
                   {workers.length === 0
@@ -275,6 +289,14 @@ function WorkerTable({
           </tbody>
         </table>
       </div>
+
+      {selectedWorker && (
+        <WorkerDetailModal
+          worker={selectedWorker}
+          onClose={() => setSelectedWorker(null)}
+          onLeaveApplied={onRefresh}
+        />
+      )}
     </div>
   );
 }
