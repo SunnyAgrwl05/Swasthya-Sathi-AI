@@ -1048,7 +1048,7 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     """
 
     actions: list[str] = []
-    token = _actions_var.set(actions)
+    _actions_var.set(actions)
     global _actions_taken
     _actions_taken = actions
 
