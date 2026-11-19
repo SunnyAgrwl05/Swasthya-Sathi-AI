@@ -60,9 +60,38 @@ describe("api service", () => {
     expect(global.fetch).toHaveBeenCalledWith("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Mark Anita present", context: null }),
+      body: JSON.stringify({ message: "Mark Anita present" }),
     });
     expect(result).toEqual(mockReply);
+  });
+
+  it("importWorkersCsv sends multipart form data to /api/workers/import-csv", async () => {
+    const mockSummary = { total_rows: 5, created: 4, skipped: 1, errors: [] };
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockSummary,
+    });
+
+    const fakeFile = new File(["worker_code,name\nHW1,Pooja"], "test.csv", { type: "text/csv" });
+    const result = await api.importWorkersCsv(fakeFile);
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/workers/import-csv", expect.objectContaining({
+      method: "POST",
+      body: expect.any(FormData),
+    }));
+    expect(result).toEqual(mockSummary);
+  });
+
+  it("exportAttendanceCsvUrl constructs correct query params", () => {
+    const url1 = api.exportAttendanceCsvUrl("2026-11", "Danapur");
+    expect(url1).toBe("/api/attendance/export-csv?month=2026-11&center=Danapur");
+
+    const url2 = api.exportAttendanceCsvUrl("2026-11", "All");
+    expect(url2).toBe("/api/attendance/export-csv?month=2026-11");
+  });
+
+  it("sampleWorkersCsvUrl points to sample-csv endpoint", () => {
+    expect(api.sampleWorkersCsvUrl).toBe("/api/workers/sample-csv");
   });
 
   it("getDailyBroadcast fetches /api/broadcast/daily", async () => {

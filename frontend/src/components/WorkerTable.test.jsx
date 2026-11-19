@@ -131,4 +131,27 @@ describe("WorkerTable", () => {
     expect(neutralBadge).toBeInTheDocument();
     expect(neutralBadge).toHaveAttribute("title", "Week-over-week: unchanged (70%)");
   });
+
+  it("renders Import CSV and Export Sheet actions", () => {
+    render(<WorkerTable workers={workers} summary={summary} />);
+
+    const importBtn = screen.getByRole("button", { name: /import csv/i });
+    const exportBtn = screen.getByRole("link", { name: /export sheet/i });
+
+    expect(importBtn).toBeInTheDocument();
+    expect(exportBtn).toBeInTheDocument();
+    expect(exportBtn).toHaveAttribute("download");
+  });
+
+  it("opens import modal with sample CSV template download link", () => {
+    render(<WorkerTable workers={workers} summary={summary} />);
+
+    const importBtn = screen.getByRole("button", { name: /import csv/i });
+    fireEvent.click(importBtn);
+
+    expect(screen.getByText("📥 Bulk Import Health Workers")).toBeInTheDocument();
+    const downloadSample = screen.getByRole("link", { name: /download sample csv/i });
+    expect(downloadSample).toBeInTheDocument();
+    expect(downloadSample).toHaveAttribute("href", "/api/workers/sample-csv");
+  });
 });

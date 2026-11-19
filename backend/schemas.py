@@ -11,6 +11,13 @@ class WorkerCreate(BaseModel):
     phone: str
 
 
+class WorkerImportSummary(BaseModel):
+    total_rows: int
+    created: int
+    skipped: int
+    errors: list[str] = []
+
+
 class WorkerOut(WorkerCreate):
     id: int
 
