@@ -6,6 +6,7 @@ Supports Fast2SMS, Twilio, and sandbox mock delivery with delivery audit logging
 
 import os
 import re
+import json
 import uuid
 import datetime
 from typing import Dict, Any, List
@@ -190,3 +191,118 @@ def dispatch_batch_broadcast_sms(
         "channel": "SMS",
         "errors": errors,
     }
+
+
+# =====================================================
+# Offline-First SMS Queue Operations
+# =====================================================
+
+def enqueue_sms_alert(
+    db: Session,
+    phone: str,
+    message: str,
+    worker_name: str = "Field Worker",
+    max_retries: int = 3,
+    retry_interval_seconds: int = 60,
+) -> models.SMSQueueItem:
+    """
+    Enqueues an SMS message into the offline queue with scheduled retry intervals.
+    """
+    item = models.SMSQueueItem(
+        worker_name=worker_name,
+        phone=phone,
+        message=message,
+        status="pending",
+        attempts=0,
+        max_retries=max_retries,
+        retry_interval_seconds=retry_interval_seconds,
+        next_retry_at=datetime.datetime.utcnow(),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def process_offline_sms_queue(
+    db: Session,
+    now: datetime.datetime | None = None,
+) -> Dict[str, Any]:
+    """
+    Processes eligible pending items in the offline SMS queue.
+    Applies incremental retry counts and exponential/interval backoff.
+    """
+    if now is None:
+        now = datetime.datetime.utcnow()
+
+    eligible_items = (
+        db.query(models.SMSQueueItem)
+        .filter(
+            models.SMSQueueItem.status == "pending",
+            models.SMSQueueItem.next_retry_at <= now,
+        )
+        .all()
+    )
+
+    sent_count = 0
+    retrying_count = 0
+    failed_count = 0
+
+    for item in eligible_items:
+        res = transmit_sms(item.phone, item.message)
+        item.attempts += 1
+        item.updated_at = now
+
+        if res.get("success"):
+            item.status = "sent"
+            item.last_error = None
+            sent_count += 1
+            # Add audit log
+            db.add(
+                models.NotificationLog(
+                    worker_name=item.worker_name,
+                    phone=item.phone,
+                    notification_type="SMS",
+                    message=item.message,
+                    status="Sent",
+                )
+            )
+        else:
+            item.last_error = str(res.get("error", "Unknown transmission error"))
+            if item.attempts >= item.max_retries:
+                item.status = "failed"
+                failed_count += 1
+                db.add(
+                    models.NotificationLog(
+                        worker_name=item.worker_name,
+                        phone=item.phone,
+                        notification_type="SMS",
+                        message=item.message,
+                        status="Failed",
+                    )
+                )
+            else:
+                item.status = "pending"
+                retrying_count += 1
+                item.next_retry_at = now + datetime.timedelta(
+                    seconds=item.retry_interval_seconds * item.attempts
+                )
+
+    db.commit()
+    return {
+        "processed": len(eligible_items),
+        "sent": sent_count,
+        "retrying": retrying_count,
+        "failed": failed_count,
+    }
+
+
+def serialize_sms_queue(items: List[models.SMSQueueItem]) -> str:
+    """Serializes SMS queue records to JSON string for local caching / offline sync."""
+    data = [item.to_dict() for item in items]
+    return json.dumps(data)
+
+
+def deserialize_sms_queue(json_str: str) -> List[Dict[str, Any]]:
+    """Deserializes SMS queue records from offline JSON cache."""
+    return json.loads(json_str)
