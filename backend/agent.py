@@ -13,6 +13,7 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 import contextvars
 import datetime
 import os
+import re
 from difflib import get_close_matches
 
 import google.generativeai as genai
@@ -150,8 +151,11 @@ def _resolve_worker(db: Session, name: str, center: str | None = None):
             worker
             for worker in workers
             if worker.name.strip().lower() in query_lower
-            and (worker.center or "").strip()
-            and (worker.center or "").strip().lower() in query_lower
+            and any(
+                token in query_lower
+                for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+                if len(token) > 2
+            )
         ]
         if len(combined_matches) == 1:
             return combined_matches[0]
@@ -185,8 +189,11 @@ def _resolve_worker(db: Session, name: str, center: str | None = None):
     query_center_matches = [
         worker
         for worker in candidates
-        if (worker.center or "").strip()
-        and (worker.center or "").strip().lower() in query_lower
+        if any(
+            token in query_lower
+            for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+            if len(token) > 2
+        )
     ]
     if len(query_center_matches) == 1:
         return query_center_matches[0]
