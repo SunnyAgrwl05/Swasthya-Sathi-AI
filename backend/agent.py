@@ -10,6 +10,7 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
+import contextvars
 import datetime
 import os
 from difflib import get_close_matches
@@ -63,19 +64,74 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
+# Using ContextVar ensures thread-safety under concurrent async FastAPI workers.
+_actions_var: contextvars.ContextVar[list[str]] = contextvars.ContextVar("_actions_var")
 _actions_taken: list[str] = []
 
 
+def record_action(msg: str) -> None:
+    """Record an action taken during a tool invocation in a thread-safe context."""
+    try:
+        actions = _actions_var.get()
+        actions.append(msg)
+    except LookupError:
+        _actions_taken.append(msg)
+
+
+def get_actions() -> list[str]:
+    """Retrieve actions recorded in the current request context."""
+    try:
+        return _actions_var.get()
+    except LookupError:
+        return _actions_taken
+
+
 def _resolve_worker(db: Session, name: str):
-    """Fuzzy-match a spoken/typed worker name to a DB row."""
+    """Fuzzy-match a spoken/typed worker name, ID, or composite (name + center) to a DB row."""
     workers = db.query(models.HealthWorker).all()
     if not workers:
         return None
-    names = {w.name.lower(): w for w in workers}
-    if name.lower() in names:
-        return names[name.lower()]
-    match = get_close_matches(name.lower(), names.keys(), n=1, cutoff=0.6)
-    return names[match[0]] if match else None
+
+    name_lower = name.lower().strip()
+
+    # 1. Direct ID match (e.g. "#2" or "id: 2" or integer string)
+    if name_lower.startswith("#") and name_lower[1:].isdigit():
+        wid = int(name_lower[1:])
+        for w in workers:
+            if w.id == wid:
+                return w
+
+    # 2. Match composite name with center e.g. "Pooja Singh (Danapur)" or "Pooja Singh - Danapur"
+    for w in workers:
+        composite1 = f"{w.name} ({w.center})".lower()
+        composite2 = f"{w.name} - {w.center}".lower()
+        if composite1 == name_lower or composite2 == name_lower:
+            return w
+        if w.name.lower() in name_lower and w.center.lower() in name_lower:
+            return w
+
+    # 3. Exact name match across multiple candidates
+    exact_matches = [w for w in workers if w.name.lower() == name_lower]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    elif len(exact_matches) > 1:
+        # Check if query contains any of their center names for disambiguation
+        for w in exact_matches:
+            if w.center.lower() in name_lower:
+                return w
+        # Default to first worker if no center disambiguation provided
+        return exact_matches[0]
+
+    # 4. Fuzzy matching across names and center-disambiguated names
+    name_map = {}
+    for w in workers:
+        if w.name.lower() not in name_map:
+            name_map[w.name.lower()] = w
+        name_map[f"{w.name.lower()} ({w.center.lower()})"] = w
+        name_map[f"{w.name.lower()} - {w.center.lower()}"] = w
+
+    match = get_close_matches(name_lower, name_map.keys(), n=1, cutoff=0.6)
+    return name_map[match[0]] if match else None
 
 
 def _parse_date(date_str: str | None) -> datetime.date:
@@ -144,7 +200,7 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
 
         db.commit()
 
-        _actions_taken.append(
+        record_action(
             f"Marked {worker.name} as {status} on {the_date.isoformat()}"
         )
 
@@ -402,25 +458,8 @@ def generate_daily_broadcast() -> str:
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
             lines.append("")
-
-            for worker in workers:
-                pct = round(
-                    sum(
-                        1
-                        for r in worker.records
-                        if r.date >= since and r.status == "present"
-                    )
-                    / max(
-                        1,
-                        len([r for r in worker.records if r.date >= since]),
-                    )
-                    * 100,
-                    1,
-                )
-
-                if pct < 75:
-                    lines.append(f"• {worker.name} ({pct}%)")
-
+            for item in flagged:
+                lines.append(f"• {item}")
             lines.append("")
 
         lines.append("✅ Operational Recommendation")
@@ -455,7 +494,7 @@ def consult_medical_guidelines(topic: str) -> str:
             "Please advise the supervisor to consult the Primary Health Centre (PHC) Medical Officer."
         )
 
-    _actions_taken.append(f"Retrieved verified health guideline: {results[0]['section_title']}")
+    record_action(f"Retrieved verified health guideline: {results[0]['section_title']}")
 
     formatted = []
     for r in results:
@@ -933,8 +972,10 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     Main AI Agent runtime.
     """
 
+    actions: list[str] = []
+    token = _actions_var.set(actions)
     global _actions_taken
-    _actions_taken = []
+    _actions_taken = actions
 
     try:
         last_error = None
@@ -963,10 +1004,11 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 except Exception:
                     tool_output = ""
 
+                current_actions = list(actions)
                 # If Gemini returned no text but a tool executed,
                 # show executed actions.
-                if not tool_output and _actions_taken:
-                    tool_output = "\n".join(_actions_taken)
+                if not tool_output and current_actions:
+                    tool_output = "\n".join(current_actions)
 
                 # If nothing came back, try next key.
                 elif not tool_output:
@@ -977,10 +1019,10 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 print("USER:", user_message)
                 print("RESPONSE:")
                 print(tool_output)
-                print("ACTIONS:", _actions_taken)
+                print("ACTIONS:", current_actions)
                 print("====================================\n")
 
-                return tool_output, list(_actions_taken)
+                return tool_output, current_actions
 
             except Exception as e:
                 print(f"[Gemini Failed] {key[:10]}... -> {e}")
