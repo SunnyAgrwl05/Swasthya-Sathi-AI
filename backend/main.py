@@ -111,6 +111,12 @@ def create_attendance(
     record: schemas.AttendanceCreate,
     db: Session = Depends(get_db),
 ):
+    worker = db.query(models.HealthWorker).filter_by(id=record.worker_id).first()
+    if not worker:
+        raise HTTPException(
+            status_code=404,
+            detail="Worker not found"
+        )
 
     existing = (
         db.query(models.AttendanceRecord)
