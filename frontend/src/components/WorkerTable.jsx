@@ -29,6 +29,40 @@ function badge(pct) {
   };
 }
 
+function trendIndicator(delta, lastWeek, thisWeek) {
+  if (delta === null || delta === undefined) {
+    return null;
+  }
+
+  if (delta > 0) {
+    return {
+      arrow: "↑",
+      text: `+${delta}%`,
+      cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+      ariaLabel: `Increased by ${delta}% week-over-week`,
+      tooltip: `Week-over-week: ${lastWeek ?? 0}% → ${thisWeek ?? 0}% (+${delta}%)`,
+    };
+  }
+
+  if (delta < 0) {
+    return {
+      arrow: "↓",
+      text: `${delta}%`,
+      cls: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+      ariaLabel: `Decreased by ${Math.abs(delta)}% week-over-week`,
+      tooltip: `Week-over-week: ${lastWeek ?? 0}% → ${thisWeek ?? 0}% (${delta}%)`,
+    };
+  }
+
+  return {
+    arrow: "→",
+    text: "0%",
+    cls: "text-white/50 bg-white/5 border-white/10",
+    ariaLabel: "Unchanged week-over-week",
+    tooltip: `Week-over-week: unchanged (${thisWeek ?? 0}%)`,
+  };
+}
+
 function WorkerTable({
   workers = [],
   summary = [],
@@ -53,11 +87,17 @@ function WorkerTable({
         const stats = byId[worker.id];
         const pct = stats?.attendance_pct ?? 0;
         const status = badge(pct);
+        const trend = trendIndicator(
+          stats?.trend_delta,
+          stats?.last_week_pct,
+          stats?.this_week_pct
+        );
 
         return {
           worker,
           pct,
           status,
+          trend,
           center: worker.center || "—",
         };
       }),
@@ -222,14 +262,14 @@ function WorkerTable({
               <th className="py-3 px-2">Name</th>
               <th className="py-3 px-2">Role</th>
               <th className="py-3 px-2">Center</th>
-              <th className="py-3 px-2">30 Days</th>
+              <th className="py-3 px-2">30 Days (WoW)</th>
               <th className="py-3 px-2">Status</th>
               <th className="py-3 px-2">Timeline</th>
             </tr>
           </thead>
 
           <tbody>
-            {filteredRows.map(({ worker, pct, status, center }) => {
+            {filteredRows.map(({ worker, pct, status, trend, center }) => {
               return (
                 <tr
                   key={worker.id}
@@ -248,9 +288,21 @@ function WorkerTable({
                   </td>
 
                   <td className="py-3 px-2">
-                    <span className="font-semibold text-cyan-300">
-                      {pct}%
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-cyan-300">
+                        {pct}%
+                      </span>
+                      {trend && (
+                        <span
+                          title={trend.tooltip}
+                          aria-label={trend.ariaLabel}
+                          className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium border cursor-help ${trend.cls}`}
+                        >
+                          <span className="font-bold">{trend.arrow}</span>
+                          <span>{trend.text}</span>
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="py-3 px-2">
