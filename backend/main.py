@@ -32,6 +32,11 @@ app = FastAPI(
 class WeeklyInsightsRequest(BaseModel):
     language: str = "hi"
 
+class MedicalAuditRequest(BaseModel):
+    query: str
+    response: str
+    language: str = "hi"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -728,4 +733,3 @@ def search_knowledge(q: str = ""):
     kb = get_health_knowledge_base()
     results = kb.search(q, top_k=3)
     return {"query": q, "results": results}
-
