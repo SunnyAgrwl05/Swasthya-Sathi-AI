@@ -1,11 +1,9 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from datetime import date
 import models
 from agent import (
     _resolve_worker,
     mark_attendance,
-    get_attendance_summary,
-    find_low_attendance_workers,
     who_has_not_marked_today,
 )
 
