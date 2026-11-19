@@ -1,5 +1,4 @@
 import models
-from database import SessionLocal
 
 
 def test_models_relationships_and_constraints(db_session):
