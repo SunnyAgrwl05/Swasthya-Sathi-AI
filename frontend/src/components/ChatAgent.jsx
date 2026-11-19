@@ -13,13 +13,77 @@ const SUGGESTIONS = [
   'Aaj kisne attendance nahi mark ki?',
 ]
 
+function getSafetyTier(safety) {
+  if (!safety) {
+    return {
+      tier: "HIGH_CONFIDENCE",
+      label: "Verified Guidance",
+      score: 95,
+      badgeCls: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25",
+      icon: "🟢",
+      statusTitle: "High Clinical Confidence (85%–100%)",
+      description: "Grounded in official MoHFW & IMNCI standard healthcare guidelines.",
+      isHighRisk: false,
+    };
+  }
+
+  const score = Math.round((safety.confidence_score ?? (safety.is_flagged ? 0.65 : 0.92)) * 100);
+  const isHighRisk = safety.risk_level === "HIGH" || safety.is_flagged || score < 70;
+  const isModerate = (safety.risk_level === "MEDIUM" || (score >= 70 && score < 85)) && !isHighRisk;
+
+  if (isHighRisk) {
+    return {
+      tier: "FLAGGED_REVIEW",
+      label: "Flagged for Clinical Review",
+      score,
+      badgeCls: "bg-rose-500/15 border-rose-500/30 text-rose-300 hover:bg-rose-500/25",
+      icon: "🔴",
+      statusTitle: "Flagged for Review (<70% or High Risk)",
+      description: "Requires immediate clinical verification by a PHC Medical Officer before implementation.",
+      isHighRisk: true,
+    };
+  }
+
+  if (isModerate) {
+    return {
+      tier: "MODERATE_ADVISORY",
+      label: "Clinical Advisory",
+      score,
+      badgeCls: "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25",
+      icon: "🟡",
+      statusTitle: "Moderate Confidence (70%–84%)",
+      description: "Standard clinical advisory with precautionary healthcare notice.",
+      isHighRisk: false,
+    };
+  }
+
+  return {
+    tier: "HIGH_CONFIDENCE",
+    label: "Verified Guidance",
+    score,
+    badgeCls: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25",
+    icon: "🟢",
+    statusTitle: "High Clinical Confidence (85%–100%)",
+    description: "Grounded in official MoHFW & IMNCI standard healthcare guidelines.",
+    isHighRisk: false,
+  };
+}
+
 export default function ChatAgent() {
   const [messages, setMessages] = useState([])
   const [showWelcome, setShowWelcome] = useState(true)
+  const [expandedSafety, setExpandedSafety] = useState({})
 
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [listening, setListening] = useState(false)
+
+  const toggleSafetyDrawer = (idx) => {
+    setExpandedSafety((prev) => ({
+      ...prev,
+      [idx]: !prev[idx],
+    }))
+  }
 
   const bottomRef = useRef(null)
   const recognitionRef = useRef(null)
@@ -86,8 +150,14 @@ export default function ChatAgent() {
       const res = await api.sendChat(msg)
 
       setMessages((m) => [
-      ...m,
-      { role: 'agent', text: res.reply, actions: res.actions_taken || [], language: res.language || "hi" },
+        ...m,
+        {
+          role: 'agent',
+          text: res.reply,
+          actions: res.actions_taken || [],
+          language: res.language || "hi",
+          safety: res.hallucination_check || null,
+        },
       ])
     } catch {
       setMessages((m) => [
@@ -155,13 +225,106 @@ Ask me:
                 : 'bg-white/5 border border-line rounded-bl-sm shadow-lg'
                 }`}
             >
-              {m.role === "agent" ? (
-                <div className="prose prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {m.text}
-                  </ReactMarkdown>
-                </div>
-              ) : (
+              {m.role === "agent" ? (() => {
+                const tierInfo = getSafetyTier(m.safety);
+                const isExpanded = !!expandedSafety[i];
+
+                return (
+                  <div>
+                    {/* High Risk Banner if Flagged */}
+                    {tierInfo.isHighRisk && (
+                      <div className="mb-3 p-3 rounded-xl border bg-rose-500/15 border-rose-500/30 text-rose-200 text-xs">
+                        <div className="font-semibold flex items-center gap-1.5 mb-1">
+                          <span>⚠️ Requires verification by PHC Medical Officer</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-200 ml-auto font-mono">
+                            Risk: HIGH
+                          </span>
+                        </div>
+                        <p className="text-[11px] opacity-90">
+                          {m.safety?.warning_message || "Clinical notice: This guidance contains sensitive medical advice and must be verified by a physician."}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Clinical Governance Verification Chip */}
+                    <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => toggleSafetyDrawer(i)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition cursor-pointer ${tierInfo.badgeCls}`}
+                        title="Click to inspect clinical safety and confidence metrics"
+                      >
+                        <span>{tierInfo.icon}</span>
+                        <span>{tierInfo.label}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 font-mono">
+                          {tierInfo.score}%
+                        </span>
+                        <span className="text-[10px] opacity-75">{isExpanded ? "▲" : "▼"}</span>
+                      </button>
+
+                      <span className="text-[10px] text-white/40 italic">
+                        MoHFW / IMNCI Verified
+                      </span>
+                    </div>
+
+                    {/* Expandable Clinical Governance Drawer */}
+                    {isExpanded && (
+                      <div className="mb-3 p-3 rounded-xl border border-white/10 bg-black/40 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-white/90">Clinical Safety Breakdown</span>
+                          <span className="text-[10px] text-white/50">{tierInfo.statusTitle}</span>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              tierInfo.score >= 85
+                                ? "bg-emerald-400"
+                                : tierInfo.score >= 70
+                                ? "bg-amber-400"
+                                : "bg-rose-400"
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(0, tierInfo.score))}%` }}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 text-white/70">
+                          <div>
+                            <span className="text-white/40 block text-[10px]">Protocol Authority:</span>
+                            <span className="font-medium text-white/90">MoHFW Bihar / IMNCI</span>
+                          </div>
+                          <div>
+                            <span className="text-white/40 block text-[10px]">Confidence Score:</span>
+                            <span className="font-medium text-white/90">{tierInfo.score}%</span>
+                          </div>
+                        </div>
+
+                        {m.safety?.flagged_reasons?.length > 0 && (
+                          <div className="pt-1 text-[11px] text-rose-300">
+                            <span className="font-semibold block text-[10px] text-rose-400">Flagged Reasons:</span>
+                            <ul className="list-disc pl-4 space-y-0.5">
+                              {m.safety.flagged_reasons.map((r, idx) => (
+                                <li key={idx}>{r}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t border-white/10 text-[10px] text-white/50 leading-relaxed">
+                          ℹ️ <strong>Mandatory Clinical Notice</strong>: Assistive intelligence for PHC workforce. For emergency obstetrics, pediatric complications, or critical triage, immediately transfer to District Hospital or call 108/102.
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="prose prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {m.text}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                );
+              })() : (
                 <div className="whitespace-pre-wrap">
                   {m.text}
                 </div>

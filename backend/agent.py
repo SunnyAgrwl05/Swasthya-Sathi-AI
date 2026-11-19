@@ -10,8 +10,10 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
+import contextvars
 import datetime
 import os
+import re
 from difflib import get_close_matches
 
 import google.generativeai as genai
@@ -25,7 +27,7 @@ from database import SessionLocal
 load_dotenv()
 
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
@@ -63,20 +65,142 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
+# Using ContextVar ensures thread-safety under concurrent async FastAPI workers.
+_actions_var: contextvars.ContextVar[list[str]] = contextvars.ContextVar("_actions_var")
 _actions_taken: list[str] = []
 
 
-def _resolve_worker(db: Session, name: str):
-    """Fuzzy-match a spoken/typed worker name to a DB row."""
+def record_action(msg: str) -> None:
+    """Record an action taken during a tool invocation in a thread-safe context."""
+    try:
+        actions = _actions_var.get()
+        actions.append(msg)
+    except LookupError:
+        _actions_taken.append(msg)
+
+
+def get_actions() -> list[str]:
+    """Retrieve actions recorded in the current request context."""
+    try:
+        return _actions_var.get()
+    except LookupError:
+        return _actions_taken
+
+
+class AmbiguousWorkerError(Exception):
+    """Raised when a worker name matches multiple records without enough context."""
+
+    def __init__(self, name: str, candidates: list[models.HealthWorker]):
+        self.name = name
+        self.candidates = candidates
+        options = ", ".join(
+            f"{worker.name} ({worker.center or 'No Center'}, ID: {worker.id})"
+            for worker in candidates
+        )
+        super().__init__(
+            f"Multiple health workers found matching '{name}': {options}. "
+            "Please specify the center name or worker ID to disambiguate."
+        )
+
+
+def _resolve_worker(db: Session, name: str, center: str | None = None):
+    """Resolve a worker by ID, exact/composite name, or unambiguous fuzzy match.
+
+    Duplicate names are never resolved by choosing the first database row.
+    Callers receive AmbiguousWorkerError and can ask the supervisor to clarify.
+    """
     workers = db.query(models.HealthWorker).all()
     if not workers:
         return None
-    names = {w.name.lower(): w for w in workers}
-    if name.lower() in names:
-        return names[name.lower()]
-    match = get_close_matches(name.lower(), names.keys(), n=1, cutoff=0.6)
-    return names[match[0]] if match else None
 
+    query = (name or "").strip()
+    query_lower = query.lower()
+    if not query_lower:
+        return None
+
+    # Support IDs entered as "12", "#12", or "id: 12".
+    id_text = query_lower.removeprefix("#").removeprefix("id:").strip()
+    if id_text.isdigit():
+        worker = db.query(models.HealthWorker).filter_by(id=int(id_text)).first()
+        if worker:
+            return worker
+
+    # Exact composite queries are the safest way to resolve duplicate names.
+    composite_matches = [
+        worker
+        for worker in workers
+        if query_lower in {
+            f"{worker.name} {worker.center or ''}".strip().lower(),
+            f"{worker.name} ({worker.center or ''})".strip().lower(),
+            f"{worker.name} - {worker.center or ''}".strip().lower(),
+        }
+    ]
+    if len(composite_matches) == 1:
+        return composite_matches[0]
+    if len(composite_matches) > 1:
+        raise AmbiguousWorkerError(query, composite_matches)
+
+    name_groups: dict[str, list[models.HealthWorker]] = {}
+    for worker in workers:
+        name_groups.setdefault(worker.name.strip().lower(), []).append(worker)
+
+    candidates = name_groups.get(query_lower)
+    if candidates is None:
+        # A query may contain both a worker name and its center without punctuation.
+        combined_matches = [
+            worker
+            for worker in workers
+            if worker.name.strip().lower() in query_lower
+            and any(
+                token in query_lower
+                for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+                if len(token) > 2
+            )
+        ]
+        if len(combined_matches) == 1:
+            return combined_matches[0]
+        if len(combined_matches) > 1:
+            raise AmbiguousWorkerError(query, combined_matches)
+
+        # Fuzzy matching is performed against unique names, then ambiguity is
+        # checked against every worker sharing the selected name.
+        matches = get_close_matches(query_lower, list(name_groups), n=1, cutoff=0.6)
+        if not matches:
+            return None
+        candidates = name_groups[matches[0]]
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # If the caller supplies a center, use it only when it identifies one worker.
+    if center:
+        center_lower = center.strip().lower()
+        center_matches = [
+            worker
+            for worker in candidates
+            if center_lower and center_lower in (worker.center or "").lower()
+        ]
+        if len(center_matches) == 1:
+            return center_matches[0]
+        if center_matches:
+            candidates = center_matches
+
+    # Also accept center text included in the worker-name query.
+    query_center_matches = [
+        worker
+        for worker in candidates
+        if any(
+            token in query_lower
+            for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+            if len(token) > 2
+        )
+    ]
+    if len(query_center_matches) == 1:
+        return query_center_matches[0]
+    if query_center_matches:
+        candidates = query_center_matches
+
+    raise AmbiguousWorkerError(query, candidates)
 
 def _parse_date(date_str: str | None) -> datetime.date:
     if not date_str or date_str.lower() == "today":
@@ -95,7 +219,13 @@ def _parse_date(date_str: str | None) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
-def mark_attendance(worker_name: str, status: str, date_str: str = "today", note: str = "") -> str:
+def mark_attendance(
+    worker_name: str,
+    status: str,
+    date_str: str = "today",
+    note: str = "",
+    center: str = "",
+) -> str:
     """Marks attendance for a health worker on a given date.
 
     Args:
@@ -103,11 +233,15 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
         status: One of 'present', 'absent', 'half-day', 'leave'.
         date_str: Date in YYYY-MM-DD, or 'today' / 'yesterday'.
         note: Optional short remark, e.g. reason for absence.
+        center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
 
     try:
-        worker = _resolve_worker(db, worker_name)
+        try:
+            worker = _resolve_worker(db, worker_name, center=center or None)
+        except AmbiguousWorkerError as error:
+            return str(error)
 
         if not worker:
             return (
@@ -144,7 +278,7 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
 
         db.commit()
 
-        _actions_taken.append(
+        record_action(
             f"Marked {worker.name} as {status} on {the_date.isoformat()}"
         )
 
@@ -177,20 +311,24 @@ Ensure all worker details are complete for comprehensive reporting.
         db.close()
 
 
-def get_attendance_summary(worker_name: str = "", days: int = 30) -> str:
+def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = "") -> str:
     """Gets an attendance summary (present/absent/half-day/leave counts) for one worker
     or, if worker_name is empty, for every worker, over the last N days.
 
     Args:
         worker_name: Worker name, or leave blank for all workers.
         days: Lookback window in days (default 30).
+        center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
     try:
         since = datetime.date.today() - datetime.timedelta(days=days)
         query = db.query(models.HealthWorker)
         if worker_name:
-            w = _resolve_worker(db, worker_name)
+            try:
+                w = _resolve_worker(db, worker_name, center=center or None)
+            except AmbiguousWorkerError as error:
+                return str(error)
             if not w:
                 return f"No health worker found matching '{worker_name}'."
             query = query.filter(models.HealthWorker.id == w.id)
@@ -402,25 +540,8 @@ def generate_daily_broadcast() -> str:
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
             lines.append("")
-
-            for worker in workers:
-                pct = round(
-                    sum(
-                        1
-                        for r in worker.records
-                        if r.date >= since and r.status == "present"
-                    )
-                    / max(
-                        1,
-                        len([r for r in worker.records if r.date >= since]),
-                    )
-                    * 100,
-                    1,
-                )
-
-                if pct < 75:
-                    lines.append(f"• {worker.name} ({pct}%)")
-
+            for item in flagged:
+                lines.append(f"• {item}")
             lines.append("")
 
         lines.append("✅ Operational Recommendation")
@@ -433,6 +554,40 @@ def generate_daily_broadcast() -> str:
 
     finally:
         db.close()
+
+
+def consult_medical_guidelines(topic: str) -> str:
+    """Consults verified Indian public health protocols and guidelines for
+    immunization schedules, maternal care (ANC), childhood illnesses (IMNCI),
+    and ASHA/ANM field duties. Use this whenever the supervisor asks a medical,
+    immunization, disease, or clinical protocol question.
+
+    Args:
+        topic: The disease, vaccine, pregnancy protocol, or public health topic.
+    """
+    from knowledge.rag_service import get_health_knowledge_base
+
+    kb = get_health_knowledge_base()
+    results = kb.search(topic, top_k=2)
+
+    if not results:
+        return (
+            f"No specific national guideline found matching '{topic}'. "
+            "Please advise the supervisor to consult the Primary Health Centre (PHC) Medical Officer."
+        )
+
+    record_action(f"Retrieved verified health guideline: {results[0]['section_title']}")
+
+    formatted = []
+    for r in results:
+        formatted.append(
+            f"📖 {r['document_title']} — {r['section_title']}\n"
+            f"{r['content']}\n"
+            f"(Source: {r['source_file']})"
+        )
+
+    return "\n\n---\n\n".join(formatted)
+
 
 SYSTEM_INSTRUCTION = """
 You are Swasthya Sathi AI.
@@ -455,6 +610,7 @@ YOUR CAPABILITIES
 • Generate weekly insights
 • Generate daily operational reports
 • Identify workers requiring follow-up
+• Consult verified public health, immunization, and maternal care guidelines
 • Answer general knowledge questions when unrelated to attendance
 
 ====================================================
@@ -473,6 +629,18 @@ Never assume data.
 
 If a worker cannot be found,
 politely inform the supervisor.
+
+====================================================
+
+FOR MEDICAL & PUBLIC HEALTH QUESTIONS
+
+Always use the consult_medical_guidelines tool.
+
+Never invent vaccine schedules, drug doses, or medical treatments.
+
+Always ground advice in the retrieved guideline text.
+
+Always finish with a clear recommendation that clinical decisions must be confirmed by the PHC Medical Officer.
 
 ====================================================
 
@@ -875,6 +1043,7 @@ TOOLS = [
     who_has_not_marked_today,
     generate_daily_broadcast,
     generate_weekly_insights,
+    consult_medical_guidelines,
 ]
 
 
@@ -885,8 +1054,10 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     Main AI Agent runtime.
     """
 
+    actions: list[str] = []
+    _actions_var.set(actions)
     global _actions_taken
-    _actions_taken = []
+    _actions_taken = actions
 
     try:
         last_error = None
@@ -915,10 +1086,11 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 except Exception:
                     tool_output = ""
 
+                current_actions = list(actions)
                 # If Gemini returned no text but a tool executed,
                 # show executed actions.
-                if not tool_output and _actions_taken:
-                    tool_output = "\n".join(_actions_taken)
+                if not tool_output and current_actions:
+                    tool_output = "\n".join(current_actions)
 
                 # If nothing came back, try next key.
                 elif not tool_output:
@@ -929,10 +1101,10 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
                 print("USER:", user_message)
                 print("RESPONSE:")
                 print(tool_output)
-                print("ACTIONS:", _actions_taken)
+                print("ACTIONS:", current_actions)
                 print("====================================\n")
 
-                return tool_output, list(_actions_taken)
+                return tool_output, current_actions
 
             except Exception as e:
                 print(f"[Gemini Failed] {key[:10]}... -> {e}")
@@ -943,6 +1115,30 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
 
     except Exception as e:
         print(f"[Gemini Error] {e}")
+
+    # Local fallback intent parser and tool execution when API keys are missing or API fails locally
+    msg_lower = user_message.lower()
+    try:
+        if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
+            res = who_has_not_marked_today()
+            return res, ["Executed who_has_not_marked_today tool"]
+        elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
+            res = find_low_attendance_workers()
+            return res, ["Executed find_low_attendance_workers tool"]
+        elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
+            res = generate_daily_broadcast()
+            return res, ["Executed generate_daily_broadcast tool"]
+        elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
+            res = generate_weekly_insights()
+            return res, ["Executed generate_weekly_insights tool"]
+        elif "list" in msg_lower or "worker" in msg_lower:
+            res = list_workers()
+            return res, ["Executed list_workers tool"]
+        elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
+            res = get_attendance_summary()
+            return res, ["Executed get_attendance_summary tool"]
+    except Exception as fallback_err:
+        print(f"[Local Tool Fallback Error] {fallback_err}")
 
     try:
         raw_reply = call_openrouter(user_message)
