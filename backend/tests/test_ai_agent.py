@@ -1,6 +1,4 @@
-from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
-from main import app
+from unittest.mock import patch
 import models
 
 
@@ -35,7 +33,7 @@ def test_broadcast_and_weekly_insights_endpoints(client, db_session):
         assert res.json()["message"] == "Aaj ki daily report"
         mock_broad.assert_called_once()
 
-    with patch("main.generate_weekly_insights", return_value="Weekly insight summary") as mock_insight:
+    with patch("main.generate_weekly_insights", return_value="Weekly insight summary"):
         res_get = client.get("/api/insights/weekly?language=hi")
         assert res_get.status_code == 200
         assert res_get.json()["report"] == "Weekly insight summary"
