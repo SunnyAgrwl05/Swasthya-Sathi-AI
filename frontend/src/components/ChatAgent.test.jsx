@@ -1,9 +1,21 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import ChatAgent from "./ChatAgent";
-import { api } from "../api";
-import { generateAttendancePDF } from "../utils/pdfExport";
+/**
+ * ChatAgent.test.jsx
+ *
+ * Tests the ChatAgent component:
+ * - Welcome screen is shown before first message
+ * - User message is appended and input cleared on submit
+ * - Agent reply is rendered after api.sendChat resolves
+ * - Error state renders a fallback message when api.sendChat rejects
+ * - Action badge chips are rendered when actions_taken is non-empty
+ * - Loading spinner is shown while request is in-flight
+ * - Suggestion buttons trigger a send with correct text
+ */
 
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { vi } from "vitest";
+import ChatAgent from "./ChatAgent";
+
+// Mock the api module so we never hit a real backend
 vi.mock("../api", () => ({
   api: {
     sendChat: vi.fn(),
