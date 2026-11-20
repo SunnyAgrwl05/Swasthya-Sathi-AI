@@ -1,125 +1,190 @@
 # Contributing to Swasthya Sathi AI
 
-Thank you for helping improve Swasthya Sathi AI. This project sits at the intersection of healthcare operations, AI-assisted workflows, and open-source education, so contributions should be clear, tested, and easy for maintainers to review.
+Thank you for your interest in contributing to **Swasthya Sathi AI**! This project operates at the intersection of rural public health, workforce intelligence, and autonomous AI agents. We welcome contributions from developers, researchers, designers, and healthcare enthusiasts worldwide.
 
-## Contribution Principles
+Please take a few moments to review these guidelines before getting started.
 
-- Keep pull requests focused on one issue or improvement.
-- Prefer small, reviewable changes over broad rewrites.
-- Preserve the healthcare operations context of the project.
-- Avoid committing secrets, API keys, database dumps, or local environment files.
-- Update documentation when behavior, setup, or architecture changes.
-- Add or update tests when code behavior changes.
+---
 
-## Local Development Setup
+## Code of Conduct
 
-See [docs/setup.md](docs/setup.md) for the full setup guide.
+All contributors and maintainers are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md). Please read it to understand the community standards we uphold.
 
-Short version:
+---
 
+## Ways to Contribute
+
+You can contribute to Swasthya Sathi AI in multiple ways:
+
+1. **Reporting Bugs**: Found a bug or glitch? Open an issue on GitHub with steps to reproduce.
+2. **Suggesting Enhancements**: Have ideas for new agent tools, charts, or public health metrics? Share them in GitHub Discussions or an issue.
+3. **Submitting Pull Requests**: Fix a bug, add a feature, or improve documentation.
+4. **Writing Documentation**: Help clarify setup guides, API specifications, or translation guides.
+5. **Testing & QA**: Add unit or integration tests for backend endpoints and frontend components.
+
+---
+
+## Local Development Quickstart
+
+For full setup instructions, read [docs/setup.md](docs/setup.md).
+
+### 1. Fork & Clone
+Fork the repository on GitHub and clone your fork locally:
+```bash
+git clone https://github.com/<your-username>/Swasthya-Sathi-AI.git
+cd Swasthya-Sathi-AI
+```
+
+### 2. Backend Setup
 ```bash
 cd backend
 python -m venv .venv
+
+# On Linux/macOS:
 source .venv/bin/activate
+# On Windows PowerShell:
+# .\.venv\Scripts\Activate.ps1
+
+pip install --upgrade pip
 pip install -r requirements.txt
+cp .env.example .env
 python seed.py
 uvicorn main:app --reload
 ```
 
+### 3. Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-On Windows PowerShell, activate the backend virtual environment with:
+---
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+## Branching & Git Workflow
 
-## Branch Workflow
+We follow standard GitHub Flow:
 
-1. Fork the repository.
-2. Sync your fork with the upstream `main` branch.
-3. Create a descriptive branch:
+1. Keep your fork's `main` branch synced with upstream:
+   ```bash
+   git remote add upstream https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI.git
+   git fetch upstream
+   git checkout main
+   git merge upstream/main
+   ```
 
-```bash
-git checkout -b docs/research-ready-repo
-```
+2. Create a focused, descriptive feature branch:
+   ```bash
+   git checkout -b <type>/<short-description>
+   ```
 
-4. Make the smallest complete change that solves the assigned issue.
-5. Run relevant checks.
-6. Open a pull request against the upstream `main` branch.
+   **Branch prefixes**:
+   * `feat/` — New feature or capability (e.g. `feat/whatsapp-broadcast-channel`)
+   * `fix/` — Bug fix (e.g. `fix/pdf-unicode-text-rendering`)
+   * `docs/` — Documentation improvements (e.g. `docs/api-reference-guide`)
+   * `test/` — Adding or improving tests (e.g. `test/worker-analytics-coverage`)
+   * `refactor/` — Code refactoring without behavioral changes
 
-## Commit and PR Guidelines
+3. Keep commits atomic, cohesive, and clearly documented.
 
-Use clear commit messages:
+---
+
+## Commit Guidelines
+
+We recommend using **Conventional Commits** syntax:
 
 ```text
-docs: add research methodology guide
-fix: handle missing attendance summary data
-test: cover worker listing endpoint
+<type>(<scope>): <short description in imperative mood>
+
+[optional body]
+[optional footer / issue reference]
 ```
 
-Every PR should include:
+**Examples**:
+* `feat(agent): add attendance streak calculation tool`
+* `fix(pdf): embed Noto Sans Devanagari font to prevent Unicode corruption`
+* `docs(readme): add interactive architecture sequence diagram`
+* `test(backend): add test cases for worker deletion endpoint`
 
-- Summary of the change.
-- Linked issue, for example `Closes #15`.
-- Tests or checks run.
-- Screenshots for UI changes.
-- Notes about any known limitations or follow-up work.
+---
+
+## Coding Standards
+
+### Backend (Python / FastAPI)
+* **Code Style**: Adhere to PEP 8.
+* **Linter**: We use [Ruff](https://github.com/astral-sh/ruff) for linting and code formatting:
+  ```bash
+  cd backend
+  ruff check .
+  ruff check --fix .
+  ```
+* **Type Annotations**: Use Python standard type hints (`int`, `str`, `list[schemas.WorkerOut]`).
+* **Dependency Injection**: Follow FastAPI idiomatic dependency patterns (`db: Session = Depends(get_db)`).
+
+### Frontend (React / Vite)
+* **Code Style**: Modern functional React with Hooks (`useState`, `useEffect`, `useMemo`, `useRef`).
+* **Linter**: We use ESLint with Flat Config (`eslint.config.js`):
+  ```bash
+  cd frontend
+  npm run lint
+  ```
+* **Styling**: Tailwind CSS utility classes; keep color variables aligned with design tokens (`pulse`, `line`, `panel`).
+* **Components**: Place reusable visual components in `frontend/src/components/` and utility helpers in `frontend/src/utils/`.
+
+---
 
 ## Testing Checklist
 
-Run the checks that apply to your change.
+Before opening a pull request, verify that all automated checks pass locally:
 
-Backend:
-
+### 1. Backend Tests & Lint
 ```bash
 cd backend
-pytest
+pytest -v
+ruff check .
+python -m compileall -q .
 ```
 
-Frontend:
-
+### 2. Frontend Tests & Build
 ```bash
 cd frontend
 npm test
+npm run lint
 npm run build
 ```
 
-Documentation-only changes should still be reviewed for:
+---
 
-- Broken links.
-- Accurate setup commands.
-- Correct file paths.
-- Clear grammar and formatting.
+## Pull Request Submission Process
 
-## Documentation Standards
+1. Push your branch to your GitHub fork:
+   ```bash
+   git push origin <your-branch-name>
+   ```
+2. Navigate to [SunnyAgrwl05/Swasthya-Sathi-AI](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI) and click **New Pull Request**.
+3. Fill in the PR description template:
+   * **Summary**: Clear explanation of what was changed and why.
+   * **Linked Issue**: E.g., `Closes #12` or `Fixes #34`.
+   * **Verification**: List of tests and commands run.
+   * **Screenshots**: Include before/after images for UI changes.
+4. Respond to code review feedback constructively.
 
-- Use concise Markdown headings.
-- Prefer code blocks for commands and configuration.
-- Keep diagrams readable in plain text or Mermaid-compatible Markdown.
-- Explain the reason behind workflows, not just the steps.
-- If a feature depends on an external service, document the required environment variables.
+---
 
-## Security and Privacy
+## Data Privacy & Healthcare Ethics
 
-This project models healthcare operations data. Even demo data should be treated thoughtfully.
+This project models public health operational workflows for community healthcare workers (ASHA, ANM, Anganwadi).
 
-- Do not commit real patient, worker, phone, or facility data.
-- Do not expose API keys in examples.
-- Use placeholder values in documentation.
-- Report security concerns privately to the maintainer when possible.
+* **Never commit real identifiable healthcare data**, patient information, or real worker contact details.
+* Only use synthetic names, generic phone numbers (e.g. `+91 98765 00000`), and fictional health centre identifiers in tests and sample data.
+* Never commit secrets, `.env` files, or API credentials.
 
-## Asking for Help
+---
 
-If setup fails or an issue is unclear, comment on the issue with:
+## Community & Questions
 
-- Your operating system.
-- The command that failed.
-- The exact error message.
-- What you already tried.
-
-Clear context helps maintainers and contributors unblock you faster.
+Need help or want to bounce an idea off the maintainers?
+* Open an issue on GitHub.
+* Connect with the maintainer **Sunny Kumar**:
+  * [GitHub Profile](https://github.com/SunnyAgrwl05)
+  * [LinkedIn](https://www.linkedin.com/in/sunny-kumar-a06484297)

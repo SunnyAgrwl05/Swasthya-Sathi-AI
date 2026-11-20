@@ -48,7 +48,7 @@ jobs:
         run: python -m compileall -q .
 
       - name: Run backend tests
-        run: pytest -v
+        run: pytest -v --cov=. --cov-report=term
 
       - name: Verify FastAPI application startup
         shell: bash
@@ -95,12 +95,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Frontend lint
         run: npm run lint
