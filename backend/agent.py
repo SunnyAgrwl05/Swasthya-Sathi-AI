@@ -1201,9 +1201,7 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     - Bilingual intent detection safeguard (prevents LLM translation fallback)
     - Deterministic offline execution if API is unreachable
     """
-
-    global _actions_taken
-    _actions_taken = []
+    clear_recorded_actions()
 
     intent, params = classify_attendance_intent(user_message)
 
