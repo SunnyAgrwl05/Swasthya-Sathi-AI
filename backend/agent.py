@@ -27,7 +27,16 @@ from database import SessionLocal
 load_dotenv()
 
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+FALLBACK_MODELS = [
+    GEMINI_MODEL,
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+# Remove duplicates while preserving order
+FALLBACK_MODELS = list(dict.fromkeys([m for m in FALLBACK_MODELS if m]))
 
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
@@ -45,23 +54,24 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
     last_error = None
 
     for key in GEMINI_KEYS:
-        try:
-            genai.configure(api_key=key)
+        for model_name in FALLBACK_MODELS:
+            try:
+                genai.configure(api_key=key)
 
-            model = genai.GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=system_instruction,
-                tools=tools,
-            )
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=system_instruction,
+                    tools=tools,
+                )
 
-            return model.generate_content(prompt)
+                return model.generate_content(prompt)
 
-        except Exception as e:
-            print(f"[Gemini Failed] {key[:10]}... -> {e}")
-            last_error = e
-            continue
+            except Exception as e:
+                print(f"[Gemini Failed] {key[:10]}... ({model_name}) -> {e}")
+                last_error = e
+                continue
 
-    raise Exception(f"All Gemini API Keys failed: {last_error}")
+    raise Exception(f"All Gemini API Keys and models failed: {last_error}")
 
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
@@ -1047,11 +1057,87 @@ TOOLS = [
 ]
 
 
-# ---------------------- CHAT AGENT ----------------------
+# ---------------------- INTENT CLASSIFICATION & SAFEGUARDS ----------------------
 
-def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
+def classify_attendance_intent(user_message: str) -> tuple[str | None, dict]:
     """
-    Main AI Agent runtime.
+    Classify user message into an attendance operational intent with extracted parameters.
+    Handles Hindi, Hinglish, and English queries reliably.
+    """
+    msg = user_message.lower().strip()
+
+    # 1. Low attendance queries
+    if any(k in msg for k in [
+        "kam attendance", "lowest attendance", "sabse kam", "low attendance",
+        "attendance drop", "defaulter", "bad attendance", "poor attendance"
+    ]):
+        days = 30
+        days_match = re.search(r"(\d+)\s*(?:days?|din)", msg)
+        if days_match:
+            days = int(days_match.group(1))
+        elif "week" in msg or "hafta" in msg:
+            days = 7
+        return "LOW_ATTENDANCE", {"days": days}
+
+    # 2. Who has not marked today / pending attendance
+    if any(k in msg for k in [
+        "nahi mark", "not marked", "pending attendance", "baki hai",
+        "nahi lagayi", "kisne nahi", "kiska baki", "unmarked"
+    ]):
+        return "WHO_NOT_MARKED", {}
+
+    # 3. Daily broadcast / WhatsApp status
+    if any(k in msg for k in [
+        "broadcast", "whatsapp", "daily update", "today ka summary",
+        "aaj ka update", "daily report", "status update"
+    ]):
+        return "DAILY_BROADCAST", {}
+
+    # 4. Weekly trend insights
+    if any(k in msg for k in ["weekly insights", "weekly report", "hafta ka report", "trend report", "hafta report"]):
+        lang = "en" if "english" in msg else "hi"
+        return "WEEKLY_INSIGHTS", {"language": lang}
+
+    # 5. List all workers
+    if ("list" in msg and "worker" in msg) or "all workers" in msg or "sab workers" in msg or "roster" in msg or "workers list" in msg:
+        return "LIST_WORKERS", {}
+
+    # 6. Mark attendance
+    if any(k in msg for k in ["mark", "lagao", "karo", "present", "absent", "leave", "half-day"]):
+        if any(status_word in msg for status_word in ["present", "absent", "leave", "half-day", "chhutti", "half day"]):
+            status = "present"
+            if "absent" in msg:
+                status = "absent"
+            elif "leave" in msg or "chhutti" in msg:
+                status = "leave"
+            elif "half" in msg:
+                status = "half-day"
+
+            date_str = "today"
+            if "yesterday" in msg or ("kal" in msg and "beeta" in msg):
+                date_str = "yesterday"
+
+            name_match = re.search(r"(?:mark|lagao|karo)?\s*([a-zA-Z\u0900-\u097F\s]{2,25}?)\s*(?:ko|ki)?\s*(?:aaj|kal|today|yesterday)?\s*(?:ko)?\s*(?:present|absent|leave|half|chhutti)", user_message, re.IGNORECASE)
+            name = name_match.group(1).strip() if name_match else ""
+            name = re.sub(r"^(?:please|kripya|mark|lagao|karo)\s+", "", name, flags=re.IGNORECASE).strip()
+            if name:
+                return "MARK_ATTENDANCE", {"worker_name": name, "status": status, "date_str": date_str}
+
+    # 7. Attendance summary for specific worker
+    if any(k in msg for k in ["summary", "record", "history", "details"]):
+        name_match = re.search(r"([a-zA-Z\u0900-\u097F\s]{2,25}?)\s*(?:ka|ki|ke)?\s*(?:attendance)?\s*(?:summary|record|report)", user_message, re.IGNORECASE)
+        name = name_match.group(1).strip() if name_match else ""
+        name = re.sub(r"^(?:show|dikhao|get|batao)\s+", "", name, flags=re.IGNORECASE).strip()
+        if name:
+            return "ATTENDANCE_SUMMARY", {"worker_name": name, "days": 30}
+
+    return None, {}
+
+
+def execute_attendance_intent(intent: str, params: dict) -> tuple[str, list[str]]:
+    """
+    Directly execute the corresponding attendance tool based on classified intent.
+    Provides bulletproof reliability when LLM tool dispatching fails or runs offline.
     """
 
     actions: list[str] = []
@@ -1059,62 +1145,123 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     global _actions_taken
     _actions_taken = actions
 
-    try:
-        last_error = None
+    if intent == "LOW_ATTENDANCE":
+        days = params.get("days", 30)
+        res = find_low_attendance_workers(min_percent=75.0, days=days)
+        actions = [f"Analyzed low attendance workers for the last {days} days"]
+        return res, actions
 
+    elif intent == "WHO_NOT_MARKED":
+        res = who_has_not_marked_today()
+        actions = ["Checked pending attendance records for today"]
+        return res, actions
+
+    elif intent == "DAILY_BROADCAST":
+        res = generate_daily_broadcast()
+        actions = ["Generated daily operational broadcast update"]
+        return res, actions
+
+    elif intent == "WEEKLY_INSIGHTS":
+        lang = params.get("language", "hi")
+        res = generate_weekly_insights(language=lang)
+        actions = [f"Generated weekly trend insights ({lang})"]
+        return res, actions
+
+    elif intent == "LIST_WORKERS":
+        res = list_workers()
+        actions = ["Retrieved registered health workers roster"]
+        return res, actions
+
+    elif intent == "MARK_ATTENDANCE":
+        name = params.get("worker_name", "")
+        status = params.get("status", "present")
+        date_str = params.get("date_str", "today")
+        res = mark_attendance(worker_name=name, status=status, date_str=date_str)
+        return res, list(_actions_taken)
+
+    elif intent == "ATTENDANCE_SUMMARY":
+        name = params.get("worker_name", "")
+        days = params.get("days", 30)
+        res = get_attendance_summary(worker_name=name, days=days)
+        actions = [f"Retrieved attendance summary for {name or 'all workers'}"]
+        return res, actions
+
+    return "No matching operations tool found.", []
+
+
+# ---------------------- CHAT AGENT ----------------------
+
+def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
+    """
+    Main AI Agent runtime.
+    Features:
+    - Multi-key and multi-model failover (Gemini 2.0 Flash / 1.5 Flash / 1.5 Pro)
+    - Automatic function calling for dynamic conversations
+    - Bilingual intent detection safeguard (prevents LLM translation fallback)
+    - Deterministic offline execution if API is unreachable
+    """
+
+    global _actions_taken
+    _actions_taken = []
+
+    intent, params = classify_attendance_intent(user_message)
+
+    # 1. If Gemini keys are available, attempt tool-using agent
+    if GEMINI_KEYS:
         for key in GEMINI_KEYS:
-            try:
-                genai.configure(api_key=key)
-
-                model = genai.GenerativeModel(
-                    model_name=GEMINI_MODEL,
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    tools=TOOLS,
-                )
-
-                chat = model.start_chat(
-                    enable_automatic_function_calling=True
-                )
-
-                response = chat.send_message(user_message)
-
-                tool_output = ""
-
+            for model_name in FALLBACK_MODELS:
                 try:
-                    if response.text:
-                        tool_output = response.text.strip()
-                except Exception:
+                    genai.configure(api_key=key)
+
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        tools=TOOLS,
+                    )
+
+                    chat = model.start_chat(
+                        enable_automatic_function_calling=True
+                    )
+
+                    response = chat.send_message(user_message)
                     tool_output = ""
 
-                current_actions = list(actions)
-                # If Gemini returned no text but a tool executed,
-                # show executed actions.
-                if not tool_output and current_actions:
-                    tool_output = "\n".join(current_actions)
+                    try:
+                        if response.text:
+                            tool_output = response.text.strip()
+                    except Exception:
+                        tool_output = ""
 
-                # If nothing came back, try next key.
-                elif not tool_output:
-                    raise Exception("Gemini returned empty response.")
+                    # Safeguard: If Gemini returned text WITHOUT executing tools,
+                    # but the user query was an attendance intent, execute the tool directly.
+                    if not _actions_taken and intent:
+                        print(f"[Safeguard Triggered] Gemini did not call tool for intent {intent}. Executing directly.")
+                        return execute_attendance_intent(intent, params)
 
-                print("\n====================================")
-                print("USING KEY:", key[:10] + "...")
-                print("USER:", user_message)
-                print("RESPONSE:")
-                print(tool_output)
-                print("ACTIONS:", current_actions)
-                print("====================================\n")
+                    # If tools were executed but no text returned, show actions
+                    if not tool_output and _actions_taken:
+                        tool_output = "\n".join(_actions_taken)
 
-                return tool_output, current_actions
+                    if tool_output:
+                        return tool_output, list(_actions_taken)
 
-            except Exception as e:
-                print(f"[Gemini Failed] {key[:10]}... -> {e}")
-                last_error = e
-                continue
+                except Exception as e:
+                    print(f"[Gemini Failed] {key[:10]}... ({model_name}) -> {e}")
+                    continue
 
-        raise Exception(f"All Gemini API Keys failed: {last_error}")
+    # 2. Offline / local fallback: If Gemini keys failed or are not configured,
+    # and the user asked an attendance query, execute the tool directly!
+    if intent:
+        print(f"[Offline Intent Fallback] Executing {intent} directly.")
+        return execute_attendance_intent(intent, params)
 
-    except Exception as e:
-        print(f"[Gemini Error] {e}")
+    # 3. General questions fallback via OpenRouter if configured
+    if OPENROUTER_API_KEY:
+        try:
+            raw_reply = call_openrouter(user_message)
+            return raw_reply, []
+        except Exception as e:
+            print(f"[OpenRouter Error] {e}")
 
     # Local fallback intent parser and tool execution when API keys are missing or API fails locally
     msg_lower = user_message.lower()
@@ -1140,17 +1287,17 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
     except Exception as fallback_err:
         print(f"[Local Tool Fallback Error] {fallback_err}")
 
-    try:
-        raw_reply = call_openrouter(user_message)
-        return raw_reply, []
+    # 4. Final friendly assistance message
+    return (
+        """👋 I am Swasthya Sathi AI, your Health Operations Assistant for Bihar PHC.
 
-    except Exception as e:
-        print(f"[OpenRouter Error] {e}")
+I can help you with:
+• Marking worker attendance (e.g. 'Sunny Kumar ko present mark karo')
+• Checking low attendance (e.g. 'Is month sabse kam attendance kiski hai?')
+• Finding pending attendance (e.g. 'Aaj kisne attendance nahi mark ki?')
+• Generating daily broadcasts and weekly insights reports.
 
-        return (
-            """❌ AI Operations Agent is currently unavailable.
-
-Please try again after a few seconds.""",
-            [],
-        )
+Please ask an attendance or operations question!""",
+        [],
+    )
 

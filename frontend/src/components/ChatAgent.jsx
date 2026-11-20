@@ -146,28 +146,100 @@ export default function ChatAgent() {
     setInput('')
     setLoading(true)
 
-    try {
-      const res = await api.sendChat(msg)
+    let streamedText = ''
+    let streamedActions = []
 
-      setMessages((m) => [
-        ...m,
-        {
-          role: 'agent',
-          text: res.reply,
-          actions: res.actions_taken || [],
-          language: res.language || "hi",
-          safety: res.hallucination_check || null,
-        },
-      ])
+    try {
+      if (api.streamChat) {
+        setMessages((m) => [
+          ...m,
+          { role: 'agent', text: '', actions: [], isStreaming: true, language: 'hi' },
+        ])
+
+        await api.streamChat(msg, {
+          onActions: (actions) => {
+            streamedActions = actions || []
+            setMessages((m) => {
+              const updated = [...m]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'agent') {
+                last.actions = streamedActions
+              }
+              return updated
+            })
+          },
+          onChunk: (chunk) => {
+            streamedText += chunk
+            setMessages((m) => {
+              const updated = [...m]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'agent') {
+                last.text = streamedText
+              }
+              return updated
+            })
+          },
+          onDone: (data) => {
+            setMessages((m) => {
+              const updated = [...m]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'agent') {
+                last.text = data.reply || streamedText
+                last.actions = data.actions || streamedActions
+                last.isStreaming = false
+                last.safety = data.hallucination_check || null
+              }
+              return updated
+            })
+          },
+          onError: async () => {
+            const res = await api.sendChat(msg)
+            setMessages((m) => {
+              const updated = [...m]
+              const last = updated[updated.length - 1]
+              if (last && last.role === 'agent') {
+                last.text = res.reply
+                last.actions = res.actions_taken || []
+                last.isStreaming = false
+                last.safety = res.hallucination_check || null
+              } else {
+                updated.push({
+                  role: 'agent',
+                  text: res.reply,
+                  actions: res.actions_taken || [],
+                  language: res.language || 'hi',
+                  safety: res.hallucination_check || null,
+                })
+              }
+              return updated
+            })
+          },
+        })
+      } else {
+        const res = await api.sendChat(msg)
+        setMessages((m) => [
+          ...m,
+          {
+            role: 'agent',
+            text: res.reply,
+            actions: res.actions_taken || [],
+            language: res.language || "hi",
+            safety: res.hallucination_check || null,
+          },
+        ])
+      }
     } catch {
-      setMessages((m) => [
-        ...m,
-        {
-          role: 'agent',
-          text: '❌ AI Agent is temporarily unavailable. Please try again.',
-          actions: [],
-        },
-      ])
+      setMessages((m) => {
+        const filtered = m.filter((msgItem) => msgItem.text || msgItem.role === 'user')
+        return [
+          ...filtered,
+          {
+            role: 'agent',
+            text: '❌ AI Agent is temporarily unavailable. Please try again.',
+            actions: [],
+          },
+        ]
+      })
     } finally {
       setLoading(false)
     }
@@ -357,7 +429,7 @@ Ask me:
           </div>
         ))}
 
-        {loading && (
+        {loading && !messages.some((m) => m.isStreaming && m.text) && (
           <div className="flex justify-start">
             <div className="bg-white/5 border border-line rounded-2xl rounded-bl-sm px-4 py-3 text-sm text-white/70">
               🧠 Processing...
