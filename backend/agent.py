@@ -328,6 +328,7 @@ def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = 
     Args:
         worker_name: Worker name, or leave blank for all workers.
         days: Lookback window in days (default 30).
+        center: Optional center/PHC name to disambiguate workers sharing the same name.
         center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
@@ -518,7 +519,8 @@ def generate_daily_broadcast() -> str:
             r for r in db.query(models.AttendanceRecord).filter_by(date=today).all()
         ]
         present_today = sum(1 for r in marked_today if r.status == "present")
-        missing = [w.name for w in workers if w.id not in {r.worker_id for r in marked_today}]
+        marked_ids = {r.worker_id for r in marked_today}
+        missing_workers = [w for w in workers if w.id not in marked_ids]
 
         since = today - datetime.timedelta(days=30)
         flagged = []
@@ -535,17 +537,16 @@ def generate_daily_broadcast() -> str:
             f"Present today: {present_today}/{total}",
         ]
 
-        if missing:
+        if missing_workers:
             lines.append("")
-            lines.append(f"📋 Pending Attendance ({len(missing)} Workers)")
+            lines.append(f"📋 Pending Attendance ({len(missing_workers)} Workers)")
             lines.append("")
 
-            for worker in workers:
-                if worker.name in missing:
-                    lines.append(f"• {worker.name}")
-                    lines.append(f"  {worker.role}")
-                    lines.append(f"  {worker.center}")
-                    lines.append("")
+            for worker in missing_workers:
+                lines.append(f"• {worker.name}")
+                lines.append(f"  {worker.role}")
+                lines.append(f"  {worker.center}")
+                lines.append("")
 
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
