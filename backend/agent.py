@@ -27,6 +27,7 @@ from database import SessionLocal
 load_dotenv()
 
 
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 FALLBACK_MODELS = [
@@ -889,6 +890,9 @@ Always make the response feel like it is coming from an AI Operations Agent rath
 
 
 def call_openrouter(user_message: str):
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY is not set.")
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -1063,8 +1067,10 @@ Instructions:
         except Exception as e:
             print(f"[Insights Gemini Error] {e}")
 
-            return call_openrouter(
-                f"""
+            if OPENROUTER_API_KEY:
+                try:
+                    return call_openrouter(
+                        f"""
 You are an attendance analytics expert.
 
 Analyze the following week-over-week attendance data.
@@ -1076,6 +1082,17 @@ Return ONLY plain text.
 Do NOT use Markdown.
 {lang_line}
 """
+                    )
+                except Exception as router_err:
+                    print(f"[Insights OpenRouter Error] {router_err}")
+
+            # Deterministic local summary fallback when external LLM APIs fail
+            return (
+                "📊 Weekly Attendance Performance Insights\n\n"
+                "Summary Trends (Week-over-Week):\n"
+                f"{data_summary or 'No active worker records found for the past 14 days.'}\n\n"
+                "Operational Recommendation:\n"
+                "• Supervisors should conduct weekly check-ins with at-risk health workers to address field challenges."
             )
 
     finally:
@@ -1096,7 +1113,163 @@ TOOLS = [
 ]
 
 
-# ---------------------- INTENT CLASSIFICATION & SAFEGUARDS ----------------------
+def _dispatch_local_attendance_tool(user_message: str) -> tuple[str, list[str]] | None:
+    """
+    Directly dispatches attendance and workforce tools when Gemini is unavailable,
+    ensuring local development environments execute database tools rather than
+    behaving as a generic chatbot without tools.
+    """
+    msg = user_message.strip()
+    msg_lower = msg.lower()
+
+    # 1. Who has not marked attendance today / pending workers
+    if (
+        ("not marked" in msg_lower and "today" in msg_lower)
+        or "who has not marked" in msg_lower
+        or "pending attendance" in msg_lower
+        or "attendance nahi laga" in msg_lower
+        or "nahi laga" in msg_lower
+        or "kis kis ka attendance" in msg_lower
+        or "kiska attendance baaki" in msg_lower
+        or ("unmarked" in msg_lower and "today" in msg_lower)
+    ):
+        raw = who_has_not_marked_today()
+        _actions_taken.append("Executed who_has_not_marked_today tool")
+        report = (
+            "📢 *Daily Operations Report*\n\n"
+            f"{raw}\n\n"
+            "Operational Recommendation:\n"
+            "• Contact all pending health workers before the end of the shift to complete daily roster compliance."
+        )
+        return report, list(_actions_taken)
+
+    # 2. Low attendance / workers needing attention
+    if (
+        "sabse kam" in msg_lower
+        or "sab se kam" in msg_lower
+        or "low attendance" in msg_lower
+        or "lowest attendance" in msg_lower
+        or "kam attendance" in msg_lower
+        or "poor attendance" in msg_lower
+        or "at risk" in msg_lower
+        or "below 75" in msg_lower
+        or ("attendance" in msg_lower and ("kam" in msg_lower or "low" in msg_lower or "risk" in msg_lower or "attention" in msg_lower))
+        or "who needs attention" in msg_lower
+    ):
+        raw = find_low_attendance_workers()
+        _actions_taken.append("Executed find_low_attendance_workers tool")
+        report = (
+            "📊 *Attendance Analysis Complete*\n\n"
+            f"{raw}\n\n"
+            "Operational Recommendation:\n"
+            "• Supervisors should conduct weekly check-ins with at-risk health workers to address field challenges."
+        )
+        return report, list(_actions_taken)
+
+    # 3. Mark / Record Attendance Mutation
+    if "mark" in msg_lower or "present" in msg_lower or "absent" in msg_lower or "leave" in msg_lower:
+        status = None
+        for s in ("present", "absent", "leave", "half-day", "half day"):
+            if s in msg_lower:
+                status = "Half Day" if "half" in s else s.capitalize()
+                break
+
+        date_str = "yesterday" if ("kal" in msg_lower or "yesterday" in msg_lower) else "today"
+
+        db = SessionLocal()
+        try:
+            workers = db.query(models.HealthWorker).all()
+            matched_worker = None
+            for w in workers:
+                if w.name.lower() in msg_lower:
+                    matched_worker = w
+                    break
+
+            if matched_worker and status:
+                res = mark_attendance(matched_worker.name, status, date_str)
+                report = (
+                    "✅ *Attendance Updated*\n\n"
+                    f"Worker:\n{matched_worker.name}\n\n"
+                    f"Role:\n{matched_worker.role}\n\n"
+                    f"Centre:\n{matched_worker.center}\n\n"
+                    f"Status:\n{status}\n\n"
+                    f"Date:\n{date_str.capitalize()}\n\n"
+                    f"Result:\n{res}\n\n"
+                    "Recommendation:\nVerify that all field duties for the shift are logged appropriately."
+                )
+                return report, list(_actions_taken)
+        finally:
+            db.close()
+
+    # 4. Daily Broadcast
+    if (
+        "daily broadcast" in msg_lower
+        or "broadcast message" in msg_lower
+        or "whatsapp broadcast" in msg_lower
+        or "whatsapp update" in msg_lower
+        or "daily update" in msg_lower
+        or "aaj ka broadcast" in msg_lower
+        or ("broadcast" in msg_lower and "attendance" in msg_lower)
+    ):
+        raw = generate_daily_broadcast()
+        _actions_taken.append("Executed generate_daily_broadcast tool")
+        return raw, list(_actions_taken)
+
+    # 5. Weekly Insights
+    if (
+        "weekly insight" in msg_lower
+        or "weekly insights" in msg_lower
+        or "weekly trend" in msg_lower
+        or "weekly performance" in msg_lower
+        or "hafta ka report" in msg_lower
+        or "pichhle hafte" in msg_lower
+        or "week over week" in msg_lower
+    ):
+        raw = generate_weekly_insights()
+        _actions_taken.append("Executed generate_weekly_insights tool")
+        return raw, list(_actions_taken)
+
+    # 6. List all workers
+    if (
+        "list workers" in msg_lower
+        or "list of workers" in msg_lower
+        or "all workers" in msg_lower
+        or "show workers" in msg_lower
+        or "saare workers" in msg_lower
+        or "registered workers" in msg_lower
+        or ("workers" in msg_lower and ("list" in msg_lower or "dikhao" in msg_lower or "show" in msg_lower))
+    ):
+        raw = list_workers()
+        _actions_taken.append("Executed list_workers tool")
+        return raw, list(_actions_taken)
+
+    # 7. Attendance summary for specific worker or overall
+    if (
+        "attendance summary" in msg_lower
+        or "summary" in msg_lower
+        or "attendance record" in msg_lower
+        or "attendance dikhao" in msg_lower
+        or "attendance" in msg_lower
+    ):
+        db = SessionLocal()
+        try:
+            workers = db.query(models.HealthWorker).all()
+            matched_worker = None
+            for w in workers:
+                if w.name.lower() in msg_lower:
+                    matched_worker = w
+                    break
+
+            raw = get_attendance_summary(matched_worker.name if matched_worker else None)
+            _actions_taken.append("Executed get_attendance_summary tool")
+            return raw, list(_actions_taken)
+        finally:
+            db.close()
+
+    return None
+
+
+# ---------------------- CHAT AGENT ----------------------
 
 def classify_attendance_intent(user_message: str) -> tuple[str | None, dict]:
     """
@@ -1327,9 +1500,14 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
         except Exception as fallback_err:
             print(f"[Local Tool Fallback Error] {fallback_err}")
 
-        try:
-            raw_reply = call_openrouter(user_message)
-            return raw_reply, []
+    # Fallback to local database-backed tool dispatcher for attendance and roster tasks
+    local_tool_res = _dispatch_local_attendance_tool(user_message)
+    if local_tool_res is not None:
+        return local_tool_res
+
+    try:
+        raw_reply = call_openrouter(user_message)
+        return raw_reply, []
 
         except Exception as e:
             print(f"[OpenRouter Error] {e}")
