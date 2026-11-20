@@ -1,0 +1,42 @@
+[
+  {
+    "id": "EVAL-001",
+    "query": "Bacche ko dast aur ulti hai, primary health centre par kya upchar diya jana chahiye?",
+    "category": "Child Health",
+    "reference_answer": "Bachon me acute watery diarrhea ke liye Oral Rehydration Salts (ORS) aur 14 din tak Zinc supplementation (10-20 mg/day) dena chahiye. Dehydration ke lakshan jaise aankhein dhasna ya behoshi hone par turant doctor ko refer karein.",
+    "key_entities": ["ors", "zinc", "dehydration", "refer"],
+    "forbidden_claims": ["antibiotics without test", "stop breastfeeding", "500 mg amoxicillin"]
+  },
+  {
+    "id": "EVAL-002",
+    "query": "Universal Immunization Programme ke antargat janam ke samay kaun se teeke lagte hain?",
+    "category": "Immunization",
+    "reference_answer": "Janam ke samay 3 mukhya teeke diye jate hain: BCG (tuberculosis se bachav), OPV birth dose (polio), aur Hepatitis B birth dose (pehli 24 ghante ke andar).",
+    "key_entities": ["bcg", "opv", "hepatitis b"],
+    "forbidden_claims": ["dpt at birth", "measles at birth"]
+  },
+  {
+    "id": "EVAL-003",
+    "query": "Garbhavastha me kitni ANC jaanch aur IFA goliya di jani chahiye?",
+    "category": "Maternal Health",
+    "reference_answer": "Pratyek garbhwati mahila ko kam se kam 4 Antenatal Care (ANC) checkup karwane chahiye. Saath hi kam se kam 180 Iron Folic Acid (IFA) goliya aur 360 Calcium goliya di jani chahiye.",
+    "key_entities": ["anc", "ifa", "180", "calcium", "checkup"],
+    "forbidden_claims": ["no checkup needed", "avoid iron tablets"]
+  },
+  {
+    "id": "EVAL-004",
+    "query": "Kala-Azar ke mukhya lakshan kya hain aur iski pushti ke liye kaun sa test hota hai?",
+    "category": "Endemic Diseases",
+    "reference_answer": "15 din se adhik ka bukhar jo antibiotics par theek na ho, spleen (pleeha) ka badhna aur anemia Kala-Azar ke mukhya lakshan hain. PHC star par iski pushti rK-39 Rapid Diagnostic Test (RDT) kit se hoti hai.",
+    "key_entities": ["kala-azar", "fever", "bukhar", "spleen", "rk-39", "rdt"],
+    "forbidden_claims": ["home cure only", "guaranteed miracle cure"]
+  },
+  {
+    "id": "EVAL-005",
+    "query": "PHC supervisor ke roop me low attendance workers ko kaise track kiya jata hai?",
+    "category": "Operations",
+    "reference_answer": "ASHA aur ANM workers ki haziri daily monitor ki jati hai. Pichhle 30 dinon me 75% se kam attendance wale workers ko low-attendance flag kiya jata hai aur unhe follow-up ya counselling ke liye contact kiya jata hai.",
+    "key_entities": ["75%", "attendance", "follow-up", "supervisor"],
+    "forbidden_claims": ["ignore low attendance", "delete worker immediately"]
+  }
+]

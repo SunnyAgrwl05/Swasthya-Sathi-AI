@@ -1,61 +1,44 @@
-"""
-Unit tests for AI Agent local tool calling and bilingual dispatching (Issue #24)
----------------------------------------------------------------------------------
-Validates that local environment executes database-backed attendance tools
-instead of behaving as a generic conversational chatbot.
-"""
-
-from fastapi.testclient import TestClient
-
-from agent import chat_with_agent
-from main import app
-
-client = TestClient(app)
+from unittest.mock import patch
+import models
+from agent import (
+    _resolve_worker,
+    mark_attendance,
+    who_has_not_marked_today,
+)
 
 
-def test_local_tool_fallback_lowest_attendance():
-    """Validates the exact issue query: 'Is month sabse kam attendance kiski hai?'"""
-    reply, actions = chat_with_agent("Is month sabse kam attendance kiski hai?")
-    assert isinstance(reply, str)
-    assert len(reply) > 0
-    assert "Attendance" in reply or "Worker" in reply or "Recommendation" in reply
-    assert len(actions) > 0
+def test_resolve_worker_exact_and_fuzzy(db_session):
+    w = models.HealthWorker(worker_code="W-FZ", name="Rajesh Kumar", center="C1", phone="123")
+    db_session.add(w)
+    db_session.commit()
+
+    resolved = _resolve_worker(db_session, "Rajesh Kumar")
+    assert resolved is not None
+    assert resolved.id == w.id
+
+    # Fuzzy match test
+    resolved_fuzzy = _resolve_worker(db_session, "Rajesh")
+    assert resolved_fuzzy is not None
+    assert resolved_fuzzy.id == w.id
 
 
-def test_local_tool_fallback_who_has_not_marked():
-    """Validates pending attendance query in Hinglish: 'Aaj kis kis ka attendance nahi laga hai?'"""
-    reply, actions = chat_with_agent("Aaj kis kis ka attendance nahi laga hai?")
-    assert isinstance(reply, str)
-    assert len(reply) > 0
-    assert "Daily Operations Report" in reply or "Attendance" in reply or "Recommendation" in reply
+def test_mark_attendance_tool(db_session):
+    w = models.HealthWorker(worker_code="W-MK", name="Pooja Sharma", center="C2", phone="456")
+    db_session.add(w)
+    db_session.commit()
+
+    with patch("agent.SessionLocal", return_value=db_session):
+        res = mark_attendance("Pooja Sharma", "Present")
+        assert "Pooja Sharma" in res
+        assert "Present" in res
 
 
-def test_local_tool_fallback_list_workers():
-    """Validates roster listing command: 'List all health workers'"""
-    reply, actions = chat_with_agent("List all health workers")
-    assert isinstance(reply, str)
-    assert len(reply) > 0
+def test_who_has_not_marked_today_tool(db_session):
+    w = models.HealthWorker(worker_code="W-ABS", name="Deepak Verma", center="C3", phone="789")
+    db_session.add(w)
+    db_session.commit()
 
+    with patch("agent.SessionLocal", return_value=db_session):
+        res = who_has_not_marked_today()
+        assert "Deepak Verma" in res
 
-def test_local_tool_fallback_daily_broadcast():
-    """Validates daily broadcast generation command"""
-    reply, actions = chat_with_agent("Aaj ka daily attendance broadcast update banao")
-    assert isinstance(reply, str)
-    assert len(reply) > 0
-
-
-def test_local_tool_fallback_weekly_insights():
-    """Validates weekly insights command"""
-    reply, actions = chat_with_agent("Pichhle hafte ka weekly attendance insights report do")
-    assert isinstance(reply, str)
-    assert len(reply) > 0
-
-
-def test_chat_api_endpoint_execution():
-    """Validates the FastAPI POST /api/chat endpoint with an operational query"""
-    response = client.post("/api/chat", json={"message": "Is month sabse kam attendance kiski hai?"})
-    assert response.status_code == 200
-    data = response.json()
-    assert "reply" in data
-    assert "actions_taken" in data
-    assert len(data["reply"]) > 0
