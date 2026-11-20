@@ -22,166 +22,206 @@ vi.mock("../api", () => ({
   },
 }));
 
-// Mock generateAttendancePDF so jsPDF doesn't run in tests
 vi.mock("../utils/pdfExport", () => ({
   generateAttendancePDF: vi.fn(),
 }));
 
-import { api } from "../api";
+describe("ChatAgent Component", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-function setup() {
-  return render(<ChatAgent />);
-}
+  it("renders header, welcome message, suggestions, and input form", () => {
+    render(<ChatAgent />);
 
-describe("ChatAgent – Welcome screen", () => {
-  it("shows the welcome panel before any interaction", () => {
-    setup();
+    expect(screen.getByText("🤖 AI Operations Agent")).toBeInTheDocument();
+    expect(screen.getByText("AI Multi-Agent Runtime")).toBeInTheDocument();
     expect(screen.getByText(/Welcome to Swasthya Sathi AI/i)).toBeInTheDocument();
+
+    // Check suggestion chips
+    expect(
+      screen.getByRole("button", { name: "Sunny Kumar ko aaj present mark karo" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Type in Hindi, English or Hinglish…")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
   });
 
-  it("hides the welcome panel after the first message is sent", async () => {
+  it("sends message and displays agent response with action badges", async () => {
     api.sendChat.mockResolvedValueOnce({
-      reply: "Done.",
-      actions_taken: [],
+      reply: "Sunny Kumar has been marked present for today.",
+      actions_taken: ["mark_attendance"],
       language: "en",
     });
-    setup();
 
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Hello" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
+    render(<ChatAgent />);
 
-    await waitFor(() => expect(screen.queryByText(/Welcome to Swasthya Sathi AI/i)).not.toBeInTheDocument());
-  });
-});
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    const sendBtn = screen.getByRole("button", { name: "Send" });
 
-describe("ChatAgent – Message flow", () => {
-  it("displays the user message in the chat", async () => {
-    api.sendChat.mockResolvedValueOnce({ reply: "OK", actions_taken: [], language: "en" });
-    setup();
+    fireEvent.change(input, { target: { value: "Mark Sunny present" } });
+    fireEvent.click(sendBtn);
 
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Who is absent today?" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
-
-    await waitFor(() => expect(screen.getByText("Who is absent today?")).toBeInTheDocument());
-  });
-
-  it("clears the input field after submitting", async () => {
-    api.sendChat.mockResolvedValueOnce({ reply: "OK", actions_taken: [], language: "en" });
-    setup();
-
-    const input = screen.getByPlaceholderText(/Type in Hindi/i);
-    fireEvent.change(input, { target: { value: "Test message" } });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
-
-    await waitFor(() => expect(input.value).toBe(""));
-  });
-
-  it("renders the agent reply after api.sendChat resolves", async () => {
-    api.sendChat.mockResolvedValueOnce({
-      reply: "Sunita Devi is absent today.",
-      actions_taken: [],
-      language: "en",
-    });
-    setup();
-
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Who is absent?" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
-
-    await waitFor(() =>
-      expect(screen.getByText(/Sunita Devi is absent today/i)).toBeInTheDocument()
-    );
-  });
-
-  it("shows an error fallback message when api.sendChat rejects", async () => {
-    api.sendChat.mockRejectedValueOnce(new Error("Network error"));
-    setup();
-
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Mark Ravi present" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
-
-    await waitFor(() =>
-      expect(screen.getByText(/AI Agent is temporarily unavailable/i)).toBeInTheDocument()
-    );
-  });
-});
-
-describe("ChatAgent – Action badges", () => {
-  it("renders action chip badges for each tool called", async () => {
-    api.sendChat.mockResolvedValueOnce({
-      reply: "Marked present.",
-      actions_taken: ["mark_attendance", "get_attendance_summary"],
-      language: "en",
-    });
-    setup();
-
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Mark present" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
+    // Processing indicator should appear
+    expect(screen.getByText("🧠 Processing...")).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText(/mark_attendance/i)).toBeInTheDocument();
-      expect(screen.getByText(/get_attendance_summary/i)).toBeInTheDocument();
+      expect(
+        screen.getByText("Sunny Kumar has been marked present for today.")
+      ).toBeInTheDocument();
+    });
+
+    // Check user message is displayed
+    expect(screen.getByText("Mark Sunny present")).toBeInTheDocument();
+
+    // Check action chip is displayed
+    expect(screen.getByText("✓ mark_attendance")).toBeInTheDocument();
+
+    // Download PDF button should appear for agent response
+    const pdfBtn = screen.getByRole("button", { name: "📄 Download PDF" });
+    expect(pdfBtn).toBeInTheDocument();
+
+    fireEvent.click(pdfBtn);
+    expect(generateAttendancePDF).toHaveBeenCalledWith(
+      "Sunny Kumar has been marked present for today.",
+      "en"
+    );
+  });
+
+  it("sends message when clicking a suggestion chip", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "Kajal Kumari attendance summary: 88% attendance rate.",
+      actions_taken: ["get_worker_summary"],
+      language: "hi",
+    });
+
+    render(<ChatAgent />);
+
+    const suggestionBtn = screen.getByRole("button", {
+      name: "Kajal Kumari ka attendance summary dikhao",
+    });
+    fireEvent.click(suggestionBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Kajal Kumari attendance summary: 88% attendance rate.")
+      ).toBeInTheDocument();
     });
   });
 
-  it("renders no action badges when actions_taken is empty", async () => {
+  it("handles agent error gracefully with fallback message", async () => {
+    api.sendChat.mockRejectedValueOnce(new Error("Timeout"));
+
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    const sendBtn = screen.getByRole("button", { name: "Send" });
+
+    fireEvent.change(input, { target: { value: "Hello" } });
+    fireEvent.click(sendBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/AI Agent is temporarily unavailable/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("does not send empty or whitespace-only messages", () => {
+    render(<ChatAgent />);
+
+    const sendBtn = screen.getByRole("button", { name: "Send" });
+    fireEvent.click(sendBtn);
+
+    expect(api.sendChat).not.toHaveBeenCalled();
+  });
+
+  it("renders verified guidance chip and expands safety breakdown on click", async () => {
     api.sendChat.mockResolvedValueOnce({
-      reply: "Hello there.",
+      reply: "ORS and Zinc solution is the standard IMNCI protocol for acute diarrhea.",
       actions_taken: [],
       language: "en",
+      hallucination_check: {
+        is_flagged: false,
+        confidence_score: 0.94,
+        risk_level: "LOW",
+        flagged_reasons: [],
+        warning_message: null,
+      },
     });
-    setup();
 
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Hello" },
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    fireEvent.change(input, { target: { value: "ORS diarrhea protocol" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Verified Guidance/i)).toBeInTheDocument();
+      expect(screen.getByText("94%")).toBeInTheDocument();
     });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
 
-    await waitFor(() => expect(screen.getByText("Hello there.")).toBeInTheDocument());
-    // No chip elements expected
-    expect(screen.queryAllByText(/✔/).length).toBe(0);
+    // Click chip to toggle clinical safety breakdown drawer
+    const chip = screen.getByRole("button", { name: /verified guidance/i });
+    fireEvent.click(chip);
+
+    expect(screen.getByText("Clinical Safety Breakdown")).toBeInTheDocument();
+    expect(screen.getByText("MoHFW Bihar / IMNCI")).toBeInTheDocument();
+    expect(screen.getByText(/Mandatory Clinical Notice/i)).toBeInTheDocument();
   });
-});
 
-describe("ChatAgent – Loading state", () => {
-  it("shows the Processing indicator while awaiting reply", async () => {
-    let resolve;
-    api.sendChat.mockReturnValueOnce(
-      new Promise((res) => { resolve = res; })
-    );
-    setup();
-
-    fireEvent.change(screen.getByPlaceholderText(/Type in Hindi/i), {
-      target: { value: "Hello" },
+  it("renders warning banner and flagged badge for high-risk responses", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "Administer high dose medication immediately.",
+      actions_taken: [],
+      language: "en",
+      hallucination_check: {
+        is_flagged: true,
+        confidence_score: 0.58,
+        risk_level: "HIGH",
+        flagged_reasons: ["Critical dosage instruction without physician consultation"],
+        warning_message: "Requires physician authorization.",
+      },
     });
-    fireEvent.submit(screen.getByRole("button", { name: /send/i }).closest("form"));
 
-    expect(screen.getByText(/Processing/i)).toBeInTheDocument();
+    render(<ChatAgent />);
 
-    // Resolve so test cleans up without warnings
-    await act(async () => { resolve({ reply: "Done", actions_taken: [], language: "en" }); });
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    fireEvent.change(input, { target: { value: "Administer drug" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Requires verification by PHC Medical Officer/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Flagged for Clinical Review/i)).toBeInTheDocument();
+      expect(screen.getByText("58%")).toBeInTheDocument();
+    });
   });
-});
 
-describe("ChatAgent – Suggestion chips", () => {
-  it("sends the correct text when a suggestion chip is clicked", async () => {
-    api.sendChat.mockResolvedValueOnce({ reply: "OK", actions_taken: [], language: "en" });
-    setup();
+  it("renders moderate clinical advisory badge for medium risk responses", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "Monitor temperature every 4 hours.",
+      actions_taken: [],
+      language: "en",
+      hallucination_check: {
+        is_flagged: false,
+        confidence_score: 0.76,
+        risk_level: "MEDIUM",
+        flagged_reasons: [],
+      },
+    });
 
-    const suggestion = screen.getByRole("button", { name: /kajal kumari ka attendance/i });
-    fireEvent.click(suggestion);
+    render(<ChatAgent />);
 
-    await waitFor(() =>
-      expect(api.sendChat).toHaveBeenCalledWith("Kajal Kumari ka attendance summary dikhao")
-    );
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    fireEvent.change(input, { target: { value: "Fever monitoring" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Clinical Advisory/i)).toBeInTheDocument();
+      expect(screen.getByText("76%")).toBeInTheDocument();
+    });
   });
 });

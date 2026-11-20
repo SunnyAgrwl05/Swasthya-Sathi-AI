@@ -1,5 +1,15 @@
 import "@testing-library/jest-dom";
 
-// jsdom does not implement scrollIntoView; stub it globally so ChatAgent tests
-// don't throw "scrollIntoView is not a function" on the bottomRef effect.
-window.HTMLElement.prototype.scrollIntoView = vi.fn();
+// Mock scrollIntoView for jsdom
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
+// Mock ResizeObserver for Recharts ResponsiveContainer in jsdom
+if (typeof window !== "undefined" && !window.ResizeObserver) {
+  window.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
