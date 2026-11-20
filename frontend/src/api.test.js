@@ -126,6 +126,67 @@ describe("api service", () => {
     expect(result).toEqual(mockInsights);
   });
 
+  it("getAttendance fetches /api/attendance with optional workerId", async () => {
+    const mockAtt = [{ id: 1, date: "2026-11-01", status: "present" }];
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockAtt,
+    });
+
+    const resAll = await api.getAttendance();
+    expect(global.fetch).toHaveBeenCalledWith("/api/attendance", {
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(resAll).toEqual(mockAtt);
+
+    await api.getAttendance(5);
+    expect(global.fetch).toHaveBeenCalledWith("/api/attendance?worker_id=5", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("getLeaves fetches /api/leaves with optional workerId", async () => {
+    const mockLeaves = [{ id: 1, start_date: "2026-11-01", leave_type: "casual" }];
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockLeaves,
+    });
+
+    const resAll = await api.getLeaves();
+    expect(global.fetch).toHaveBeenCalledWith("/api/leaves", {
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(resAll).toEqual(mockLeaves);
+
+    await api.getLeaves(3);
+    expect(global.fetch).toHaveBeenCalledWith("/api/leaves?worker_id=3", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("createLeave posts leave payload to /api/leaves", async () => {
+    const leavePayload = {
+      worker_id: 1,
+      start_date: "2026-11-01",
+      end_date: "2026-11-05",
+      leave_type: "medical",
+      reason: "Viral fever",
+    };
+    const mockCreated = { id: 10, ...leavePayload };
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockCreated,
+    });
+
+    const res = await api.createLeave(leavePayload);
+    expect(global.fetch).toHaveBeenCalledWith("/api/leaves", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(leavePayload),
+    });
+    expect(res).toEqual(mockCreated);
+  });
+
   it("checkHallucination posts query and response to /api/safety/check-hallucination", async () => {
     const mockCheck = { is_flagged: false, confidence_score: 0.95, risk_level: "LOW" };
     global.fetch = vi.fn().mockResolvedValue({

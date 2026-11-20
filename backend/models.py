@@ -149,6 +149,10 @@ class LeaveRecord(Base):
         nullable=True,
     )
 
+    approved_by = Column(
+        String,
+        default="supervisor",
+        nullable=False,
     status = Column(
         String,
         default="Approved",

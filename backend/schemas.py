@@ -51,6 +51,27 @@ class AttendanceOut(BaseModel):
         from_attributes = True
 
 
+class LeaveCreate(BaseModel):
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str = "casual"
+    reason: str | None = None
+    approved_by: str = "supervisor"
+
+
+class LeaveOut(BaseModel):
+    id: int
+    worker_id: int
+    start_date: date
+    end_date: date
+    leave_type: str
+    reason: str | None = None
+    approved_by: str
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 class WorkerDetailOut(WorkerOut):
     total_attendance_records: int = 0
     recent_attendance: list[AttendanceOut] = []
