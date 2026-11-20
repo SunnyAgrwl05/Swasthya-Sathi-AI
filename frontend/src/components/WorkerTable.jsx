@@ -343,6 +343,7 @@ function WorkerTable({
           </thead>
 
           <tbody>
+            {filteredRows.map(({ worker, pct, trend, changePct, thisWeekPct, lastWeekPct, status, center }) => {
             {filteredRows.map(({ worker, pct, status, trend, center }) => {
               return (
                 <tr
@@ -378,6 +379,20 @@ function WorkerTable({
                       )}
                       {trend === "down" && (
                         <span
+                          className="inline-flex items-center text-xs text-rose-400 font-bold cursor-help"
+                          title={`Week-over-week: ${changePct}% (Last week: ${lastWeekPct ?? 0}% → This week: ${thisWeekPct ?? 0}%)`}
+                          aria-label={`Trending down by ${changePct}%`}
+                        >
+                          ↓
+                        </span>
+                      )}
+                      {trend === "flat" && changePct === 0 && (
+                        <span
+                          className="inline-flex items-center text-xs text-white/30 font-bold cursor-help"
+                          title="Week-over-week: unchanged"
+                          aria-label="Attendance unchanged"
+                        >
+                          →
                           className="inline-flex items-center gap-0.5 text-xs text-rose-400 font-medium cursor-help"
                           title={`Week-over-week: ${changePct}% (Last week: ${lastWeekPct ?? 0}% → This week: ${thisWeekPct ?? 0}%)`}
                           aria-label={`Performance decreased by ${Math.abs(changePct)}%`}

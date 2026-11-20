@@ -106,6 +106,17 @@ describe("WorkerTable", () => {
       {
         worker_id: 2,
         attendance_pct: 55,
+        trend: "down",
+        change_pct: -16.7,
+        this_week_pct: 50.0,
+        last_week_pct: 66.7,
+      },
+    ];
+
+    render(<WorkerTable workers={workers} summary={trendSummary} />);
+
+    expect(screen.getByLabelText("Trending up by 12.5%")).toBeInTheDocument();
+    expect(screen.getByLabelText("Trending down by -16.7%")).toBeInTheDocument();
         trend_delta: -10.0,
         this_week_pct: 50.0,
         last_week_pct: 60.0,
