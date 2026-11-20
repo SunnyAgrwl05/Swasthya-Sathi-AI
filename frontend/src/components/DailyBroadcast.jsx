@@ -22,11 +22,11 @@ export default function DailyBroadcast() {
     }
 
     async function handleDispatchSMS() {
-        if (!message) return;
+        if (!message || smsLoading) return;
         setSmsLoading(true);
         try {
             const res = await api.dispatchSMSAlerts({
-                message,
+                message: message.replace(/\*/g, ""),
                 target: "all",
             });
             setSmsResult(res);
@@ -37,6 +37,9 @@ export default function DailyBroadcast() {
                 sent: 0,
                 failed: 1,
                 errors: ["Failed to connect to SMS dispatch service"],
+                sent: 0,
+                failed: 1,
+                errors: ["Failed to connect to SMS dispatch gateway"],
             });
         } finally {
             setSmsLoading(false);
@@ -59,7 +62,7 @@ export default function DailyBroadcast() {
                     </h2>
 
                     <p className="text-xs text-white/50 mt-1">
-                        AI-generated daily operational update
+                        AI-generated daily operational update with multi-channel SMS delivery
                     </p>
                 </div>
 

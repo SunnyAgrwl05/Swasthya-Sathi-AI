@@ -85,4 +85,50 @@ describe("WorkerTable", () => {
     expect(within(table).getByText("Kajal Kumari")).toBeInTheDocument();
     expect(within(table).getByText("Ravi Kumar")).toBeInTheDocument();
   });
+
+  it("renders week-over-week trend arrows and tooltips", () => {
+    const summaryWithTrends = [
+      {
+        worker_id: 1,
+        attendance_pct: 92,
+        trend_delta: 5.5,
+        this_week_pct: 95.0,
+        last_week_pct: 89.5,
+      },
+      {
+        worker_id: 2,
+        attendance_pct: 55,
+        trend_delta: -10.0,
+        this_week_pct: 50.0,
+        last_week_pct: 60.0,
+      },
+      {
+        worker_id: 3,
+        attendance_pct: 68,
+        trend_delta: 0,
+        this_week_pct: 70.0,
+        last_week_pct: 70.0,
+      },
+    ];
+
+    render(<WorkerTable workers={workers} summary={summaryWithTrends} />);
+
+    // Check header
+    expect(screen.getByText("30 Days (WoW)")).toBeInTheDocument();
+
+    // Check upward trend for worker 1
+    const upBadge = screen.getByLabelText("Increased by 5.5% week-over-week");
+    expect(upBadge).toBeInTheDocument();
+    expect(upBadge).toHaveAttribute("title", "Week-over-week: 89.5% → 95% (+5.5%)");
+
+    // Check downward trend for worker 2
+    const downBadge = screen.getByLabelText("Decreased by 10% week-over-week");
+    expect(downBadge).toBeInTheDocument();
+    expect(downBadge).toHaveAttribute("title", "Week-over-week: 60% → 50% (-10%)");
+
+    // Check neutral trend for worker 3
+    const neutralBadge = screen.getByLabelText("Unchanged week-over-week");
+    expect(neutralBadge).toBeInTheDocument();
+    expect(neutralBadge).toHaveAttribute("title", "Week-over-week: unchanged (70%)");
+  });
 });

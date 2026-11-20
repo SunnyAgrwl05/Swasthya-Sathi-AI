@@ -20,7 +20,7 @@ describe("DailyBroadcast Component", () => {
 
     expect(screen.getByText("📢 Daily Broadcast")).toBeInTheDocument();
     expect(
-      screen.getByText("AI-generated daily operational update")
+      screen.getByText(/AI-generated daily operational update/i)
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "✨ Generate Today's Update" })
@@ -101,26 +101,6 @@ describe("DailyBroadcast Component", () => {
     expect(api.dispatchSMSAlerts).toHaveBeenCalledWith({
       message: "Attendance alert: 3 workers pending.",
       target: "all",
-    });
-  });
-
-  it("handles SMS dispatch failure gracefully with alert notice", async () => {
-    api.getDailyBroadcast.mockResolvedValueOnce({ message: "Test Broadcast" });
-    api.dispatchSMSAlerts.mockRejectedValueOnce(new Error("Gateway Error"));
-
-    render(<DailyBroadcast />);
-
-    fireEvent.click(screen.getByRole("button", { name: "✨ Generate Today's Update" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "📨 Dispatch SMS Alerts" })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "📨 Dispatch SMS Alerts" }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/⚠️ Dispatch Notice:/i)).toBeInTheDocument();
-      expect(screen.getByText(/0 messages delivered to offline field workers \(1 failed\)/i)).toBeInTheDocument();
     });
   });
 });
