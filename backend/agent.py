@@ -10,8 +10,10 @@ answer the supervisor in plain Hindi/English. This is what makes it an
 
 
 # code written by Developer Sunny ❤️
+import contextvars
 import datetime
 import os
+import re
 from difflib import get_close_matches
 
 import google.generativeai as genai
@@ -26,6 +28,16 @@ load_dotenv()
 
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+FALLBACK_MODELS = [
+    GEMINI_MODEL,
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+# Remove duplicates while preserving order
+FALLBACK_MODELS = list(dict.fromkeys([m for m in FALLBACK_MODELS if m]))
 
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY"),
@@ -43,40 +55,175 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
     last_error = None
 
     for key in GEMINI_KEYS:
-        try:
-            genai.configure(api_key=key)
+        for model_name in FALLBACK_MODELS:
+            try:
+                genai.configure(api_key=key)
 
-            model = genai.GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=system_instruction,
-                tools=tools,
-            )
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=system_instruction,
+                    tools=tools,
+                )
 
-            return model.generate_content(prompt)
+                return model.generate_content(prompt)
 
-        except Exception as e:
-            print(f"[Gemini Failed] {key[:10]}... -> {e}")
-            last_error = e
-            continue
+            except Exception as e:
+                print(f"[Gemini Failed] {key[:10]}... ({model_name}) -> {e}")
+                last_error = e
+                continue
 
-    raise Exception(f"All Gemini API Keys failed: {last_error}")
+    raise Exception(f"All Gemini API Keys and models failed: {last_error}")
 
+# _actions_context tracks actions executed by tools within a request context,
+# isolating actions per async task / thread to prevent concurrent request race conditions.
+_actions_context: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
+    "_actions_context", default=[]
+)
+
+
+def record_action(action: str):
+    """Records an executed tool action in the current request context."""
+    current = list(_actions_context.get())
+    current.append(action)
+    _actions_context.set(current)
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
+# Using ContextVar ensures thread-safety under concurrent async FastAPI workers.
+_actions_var: contextvars.ContextVar[list[str]] = contextvars.ContextVar("_actions_var")
 _actions_taken: list[str] = []
 
 
-def _resolve_worker(db: Session, name: str):
-    """Fuzzy-match a spoken/typed worker name to a DB row."""
+def record_action(msg: str) -> None:
+    """Record an action taken during a tool invocation in a thread-safe context."""
+    try:
+        actions = _actions_var.get()
+        actions.append(msg)
+    except LookupError:
+        _actions_taken.append(msg)
+
+
+def get_actions() -> list[str]:
+    """Retrieve actions recorded in the current request context."""
+    try:
+        return _actions_var.get()
+    except LookupError:
+        return _actions_taken
+
+
+class AmbiguousWorkerError(Exception):
+    """Raised when a worker name matches multiple records without enough context."""
+
+    def __init__(self, name: str, candidates: list[models.HealthWorker]):
+        self.name = name
+        self.candidates = candidates
+        options = ", ".join(
+            f"{worker.name} ({worker.center or 'No Center'}, ID: {worker.id})"
+            for worker in candidates
+        )
+        super().__init__(
+            f"Multiple health workers found matching '{name}': {options}. "
+            "Please specify the center name or worker ID to disambiguate."
+        )
+
+
+def _resolve_worker(db: Session, name: str, center: str | None = None):
+    """Resolve a worker by ID, exact/composite name, or unambiguous fuzzy match.
+
+    Duplicate names are never resolved by choosing the first database row.
+    Callers receive AmbiguousWorkerError and can ask the supervisor to clarify.
+    """
     workers = db.query(models.HealthWorker).all()
     if not workers:
         return None
-    names = {w.name.lower(): w for w in workers}
-    if name.lower() in names:
-        return names[name.lower()]
-    match = get_close_matches(name.lower(), names.keys(), n=1, cutoff=0.6)
-    return names[match[0]] if match else None
 
+    query = (name or "").strip()
+    query_lower = query.lower()
+    if not query_lower:
+        return None
+
+    # Support IDs entered as "12", "#12", or "id: 12".
+    id_text = query_lower.removeprefix("#").removeprefix("id:").strip()
+    if id_text.isdigit():
+        worker = db.query(models.HealthWorker).filter_by(id=int(id_text)).first()
+        if worker:
+            return worker
+
+    # Exact composite queries are the safest way to resolve duplicate names.
+    composite_matches = [
+        worker
+        for worker in workers
+        if query_lower in {
+            f"{worker.name} {worker.center or ''}".strip().lower(),
+            f"{worker.name} ({worker.center or ''})".strip().lower(),
+            f"{worker.name} - {worker.center or ''}".strip().lower(),
+        }
+    ]
+    if len(composite_matches) == 1:
+        return composite_matches[0]
+    if len(composite_matches) > 1:
+        raise AmbiguousWorkerError(query, composite_matches)
+
+    name_groups: dict[str, list[models.HealthWorker]] = {}
+    for worker in workers:
+        name_groups.setdefault(worker.name.strip().lower(), []).append(worker)
+
+    candidates = name_groups.get(query_lower)
+    if candidates is None:
+        # A query may contain both a worker name and its center without punctuation.
+        combined_matches = [
+            worker
+            for worker in workers
+            if worker.name.strip().lower() in query_lower
+            and any(
+                token in query_lower
+                for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+                if len(token) > 2
+            )
+        ]
+        if len(combined_matches) == 1:
+            return combined_matches[0]
+        if len(combined_matches) > 1:
+            raise AmbiguousWorkerError(query, combined_matches)
+
+        # Fuzzy matching is performed against unique names, then ambiguity is
+        # checked against every worker sharing the selected name.
+        matches = get_close_matches(query_lower, list(name_groups), n=1, cutoff=0.6)
+        if not matches:
+            return None
+        candidates = name_groups[matches[0]]
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # If the caller supplies a center, use it only when it identifies one worker.
+    if center:
+        center_lower = center.strip().lower()
+        center_matches = [
+            worker
+            for worker in candidates
+            if center_lower and center_lower in (worker.center or "").lower()
+        ]
+        if len(center_matches) == 1:
+            return center_matches[0]
+        if center_matches:
+            candidates = center_matches
+
+    # Also accept center text included in the worker-name query.
+    query_center_matches = [
+        worker
+        for worker in candidates
+        if any(
+            token in query_lower
+            for token in re.findall(r"[a-z0-9]+", (worker.center or "").lower())
+            if len(token) > 2
+        )
+    ]
+    if len(query_center_matches) == 1:
+        return query_center_matches[0]
+    if query_center_matches:
+        candidates = query_center_matches
+
+    raise AmbiguousWorkerError(query, candidates)
 
 def _parse_date(date_str: str | None) -> datetime.date:
     if not date_str or date_str.lower() == "today":
@@ -95,7 +242,13 @@ def _parse_date(date_str: str | None) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
-def mark_attendance(worker_name: str, status: str, date_str: str = "today", note: str = "") -> str:
+def mark_attendance(
+    worker_name: str,
+    status: str,
+    date_str: str = "today",
+    note: str = "",
+    center: str = "",
+) -> str:
     """Marks attendance for a health worker on a given date.
 
     Args:
@@ -103,11 +256,18 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
         status: One of 'present', 'absent', 'half-day', 'leave'.
         date_str: Date in YYYY-MM-DD, or 'today' / 'yesterday'.
         note: Optional short remark, e.g. reason for absence.
+        center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
 
     try:
-        worker = _resolve_worker(db, worker_name)
+        try:
+            worker = _resolve_worker(db, worker_name)
+        except AmbiguousWorkerError as e:
+            return str(e)
+            worker = _resolve_worker(db, worker_name, center=center or None)
+        except AmbiguousWorkerError as error:
+            return str(error)
 
         if not worker:
             return (
@@ -144,7 +304,7 @@ def mark_attendance(worker_name: str, status: str, date_str: str = "today", note
 
         db.commit()
 
-        _actions_taken.append(
+        record_action(
             f"Marked {worker.name} as {status} on {the_date.isoformat()}"
         )
 
@@ -177,20 +337,28 @@ Ensure all worker details are complete for comprehensive reporting.
         db.close()
 
 
-def get_attendance_summary(worker_name: str = "", days: int = 30) -> str:
+def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = "") -> str:
     """Gets an attendance summary (present/absent/half-day/leave counts) for one worker
     or, if worker_name is empty, for every worker, over the last N days.
 
     Args:
         worker_name: Worker name, or leave blank for all workers.
         days: Lookback window in days (default 30).
+        center: Optional center/PHC name to disambiguate workers sharing the same name.
+        center: Optional center/sub-center name to disambiguate duplicate worker names.
     """
     db = SessionLocal()
     try:
         since = datetime.date.today() - datetime.timedelta(days=days)
         query = db.query(models.HealthWorker)
         if worker_name:
-            w = _resolve_worker(db, worker_name)
+            try:
+                w = _resolve_worker(db, worker_name)
+            except AmbiguousWorkerError as e:
+                return str(e)
+                w = _resolve_worker(db, worker_name, center=center or None)
+            except AmbiguousWorkerError as error:
+                return str(error)
             if not w:
                 return f"No health worker found matching '{worker_name}'."
             query = query.filter(models.HealthWorker.id == w.id)
@@ -227,12 +395,14 @@ def find_low_attendance_workers(min_percent: float = 75.0, days: int = 30) -> st
         since = datetime.date.today() - datetime.timedelta(days=days)
 
         flagged = []
+        newly_onboarded = []
 
         for w in db.query(models.HealthWorker).all():
 
             records = [r for r in w.records if r.date >= since]
 
             if not records:
+                newly_onboarded.append(w)
                 continue
 
             present = sum(1 for r in records if r.status == "present")
@@ -250,12 +420,15 @@ def find_low_attendance_workers(min_percent: float = 75.0, days: int = 30) -> st
                 )
 
         if not flagged:
-            return (
+            msg = (
                 "📊 Attendance Analysis\n\n"
                 f"All health workers have maintained attendance above {min_percent}% "
                 f"during the last {days} days.\n\n"
                 "✅ No follow-up required."
             )
+            if newly_onboarded:
+                msg += f"\n\n🌱 {len(newly_onboarded)} newly registered worker(s) are in onboarding (0 records logged, no penalty applied)."
+            return msg
 
         flagged.sort(key=lambda x: x["attendance"])
 
@@ -271,6 +444,13 @@ def find_low_attendance_workers(min_percent: float = 75.0, days: int = 30) -> st
             lines.append(f"   • Attendance : {w['attendance']}%")
             lines.append(f"   • Role       : {w['role']}")
             lines.append(f"   • Centre     : {w['center']}")
+            lines.append("")
+
+        if newly_onboarded:
+            lines.append("🌱 Newly Onboarded Workers (Exempt from Penalty)")
+            lines.append("")
+            for nw in newly_onboarded:
+                lines.append(f"• {nw.name} ({nw.center}) — Onboarding in progress")
             lines.append("")
 
         lines.append("🔴 Risk Level")
@@ -370,7 +550,8 @@ def generate_daily_broadcast() -> str:
             r for r in db.query(models.AttendanceRecord).filter_by(date=today).all()
         ]
         present_today = sum(1 for r in marked_today if r.status == "present")
-        missing = [w.name for w in workers if w.id not in {r.worker_id for r in marked_today}]
+        marked_ids = {r.worker_id for r in marked_today}
+        missing_workers = [w for w in workers if w.id not in marked_ids]
 
         since = today - datetime.timedelta(days=30)
         flagged = []
@@ -387,33 +568,33 @@ def generate_daily_broadcast() -> str:
             f"Present today: {present_today}/{total}",
         ]
 
-        if missing:
+        if missing_workers:
             lines.append("")
-            lines.append(f"📋 Pending Attendance ({len(missing)} Workers)")
+            lines.append(f"📋 Pending Attendance ({len(missing_workers)} Workers)")
             lines.append("")
 
-            for worker in workers:
-                if worker.name in missing:
-                    lines.append(f"• {worker.name}")
-                    lines.append(f"  {worker.role}")
-                    lines.append(f"  {worker.center}")
-                    lines.append("")
+            for worker in missing_workers:
+                lines.append(f"• {worker.name}")
+                lines.append(f"  {worker.role}")
+                lines.append(f"  {worker.center}")
+                lines.append("")
 
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
             lines.append("")
 
             for worker in workers:
+                rec_count = len([r for r in worker.records if r.date >= since])
+                if rec_count == 0:
+                    continue
+
                 pct = round(
                     sum(
                         1
                         for r in worker.records
                         if r.date >= since and r.status == "present"
                     )
-                    / max(
-                        1,
-                        len([r for r in worker.records if r.date >= since]),
-                    )
+                    / rec_count
                     * 100,
                     1,
                 )
@@ -421,6 +602,8 @@ def generate_daily_broadcast() -> str:
                 if pct < 75:
                     lines.append(f"• {worker.name} ({pct}%)")
 
+            for item in flagged:
+                lines.append(f"• {item}")
             lines.append("")
 
         lines.append("✅ Operational Recommendation")
@@ -455,7 +638,7 @@ def consult_medical_guidelines(topic: str) -> str:
             "Please advise the supervisor to consult the Primary Health Centre (PHC) Medical Officer."
         )
 
-    _actions_taken.append(f"Retrieved verified health guideline: {results[0]['section_title']}")
+    record_action(f"Retrieved verified health guideline: {results[0]['section_title']}")
 
     formatted = []
     for r in results:
@@ -719,6 +902,9 @@ Always make the response feel like it is coming from an AI Operations Agent rath
 
 
 def call_openrouter(user_message: str):
+    if not OPENROUTER_API_KEY:
+        raise ValueError("OPENROUTER_API_KEY is not set.")
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -893,8 +1079,10 @@ Instructions:
         except Exception as e:
             print(f"[Insights Gemini Error] {e}")
 
-            return call_openrouter(
-                f"""
+            if OPENROUTER_API_KEY:
+                try:
+                    return call_openrouter(
+                        f"""
 You are an attendance analytics expert.
 
 Analyze the following week-over-week attendance data.
@@ -906,6 +1094,17 @@ Return ONLY plain text.
 Do NOT use Markdown.
 {lang_line}
 """
+                    )
+                except Exception as router_err:
+                    print(f"[Insights OpenRouter Error] {router_err}")
+
+            # Deterministic local summary fallback when external LLM APIs fail
+            return (
+                "📊 Weekly Attendance Performance Insights\n\n"
+                "Summary Trends (Week-over-Week):\n"
+                f"{data_summary or 'No active worker records found for the past 14 days.'}\n\n"
+                "Operational Recommendation:\n"
+                "• Supervisors should conduct weekly check-ins with at-risk health workers to address field challenges."
             )
 
     finally:
@@ -926,107 +1125,434 @@ TOOLS = [
 ]
 
 
+def _dispatch_local_attendance_tool(user_message: str) -> tuple[str, list[str]] | None:
+    """
+    Directly dispatches attendance and workforce tools when Gemini is unavailable,
+    ensuring local development environments execute database tools rather than
+    behaving as a generic chatbot without tools.
+    """
+    msg = user_message.strip()
+    msg_lower = msg.lower()
+
+    # 1. Who has not marked attendance today / pending workers
+    if (
+        ("not marked" in msg_lower and "today" in msg_lower)
+        or "who has not marked" in msg_lower
+        or "pending attendance" in msg_lower
+        or "attendance nahi laga" in msg_lower
+        or "nahi laga" in msg_lower
+        or "kis kis ka attendance" in msg_lower
+        or "kiska attendance baaki" in msg_lower
+        or ("unmarked" in msg_lower and "today" in msg_lower)
+    ):
+        raw = who_has_not_marked_today()
+        _actions_taken.append("Executed who_has_not_marked_today tool")
+        report = (
+            "📢 *Daily Operations Report*\n\n"
+            f"{raw}\n\n"
+            "Operational Recommendation:\n"
+            "• Contact all pending health workers before the end of the shift to complete daily roster compliance."
+        )
+        return report, list(_actions_taken)
+
+    # 2. Low attendance / workers needing attention
+    if (
+        "sabse kam" in msg_lower
+        or "sab se kam" in msg_lower
+        or "low attendance" in msg_lower
+        or "lowest attendance" in msg_lower
+        or "kam attendance" in msg_lower
+        or "poor attendance" in msg_lower
+        or "at risk" in msg_lower
+        or "below 75" in msg_lower
+        or ("attendance" in msg_lower and ("kam" in msg_lower or "low" in msg_lower or "risk" in msg_lower or "attention" in msg_lower))
+        or "who needs attention" in msg_lower
+    ):
+        raw = find_low_attendance_workers()
+        _actions_taken.append("Executed find_low_attendance_workers tool")
+        report = (
+            "📊 *Attendance Analysis Complete*\n\n"
+            f"{raw}\n\n"
+            "Operational Recommendation:\n"
+            "• Supervisors should conduct weekly check-ins with at-risk health workers to address field challenges."
+        )
+        return report, list(_actions_taken)
+
+    _actions_context.set([])
+    # 3. Mark / Record Attendance Mutation
+    if "mark" in msg_lower or "present" in msg_lower or "absent" in msg_lower or "leave" in msg_lower:
+        status = None
+        for s in ("present", "absent", "leave", "half-day", "half day"):
+            if s in msg_lower:
+                status = "Half Day" if "half" in s else s.capitalize()
+                break
+
+        date_str = "yesterday" if ("kal" in msg_lower or "yesterday" in msg_lower) else "today"
+
+        db = SessionLocal()
+        try:
+            workers = db.query(models.HealthWorker).all()
+            matched_worker = None
+            for w in workers:
+                if w.name.lower() in msg_lower:
+                    matched_worker = w
+                    break
+
+            if matched_worker and status:
+                res = mark_attendance(matched_worker.name, status, date_str)
+                report = (
+                    "✅ *Attendance Updated*\n\n"
+                    f"Worker:\n{matched_worker.name}\n\n"
+                    f"Role:\n{matched_worker.role}\n\n"
+                    f"Centre:\n{matched_worker.center}\n\n"
+                    f"Status:\n{status}\n\n"
+                    f"Date:\n{date_str.capitalize()}\n\n"
+                    f"Result:\n{res}\n\n"
+                    "Recommendation:\nVerify that all field duties for the shift are logged appropriately."
+                )
+                return report, list(_actions_taken)
+        finally:
+            db.close()
+
+    # 4. Daily Broadcast
+    if (
+        "daily broadcast" in msg_lower
+        or "broadcast message" in msg_lower
+        or "whatsapp broadcast" in msg_lower
+        or "whatsapp update" in msg_lower
+        or "daily update" in msg_lower
+        or "aaj ka broadcast" in msg_lower
+        or ("broadcast" in msg_lower and "attendance" in msg_lower)
+    ):
+        raw = generate_daily_broadcast()
+        _actions_taken.append("Executed generate_daily_broadcast tool")
+        return raw, list(_actions_taken)
+
+    # 5. Weekly Insights
+    if (
+        "weekly insight" in msg_lower
+        or "weekly insights" in msg_lower
+        or "weekly trend" in msg_lower
+        or "weekly performance" in msg_lower
+        or "hafta ka report" in msg_lower
+        or "pichhle hafte" in msg_lower
+        or "week over week" in msg_lower
+    ):
+        raw = generate_weekly_insights()
+        _actions_taken.append("Executed generate_weekly_insights tool")
+        return raw, list(_actions_taken)
+
+    # 6. List all workers
+    if (
+        "list workers" in msg_lower
+        or "list of workers" in msg_lower
+        or "all workers" in msg_lower
+        or "show workers" in msg_lower
+        or "saare workers" in msg_lower
+        or "registered workers" in msg_lower
+        or ("workers" in msg_lower and ("list" in msg_lower or "dikhao" in msg_lower or "show" in msg_lower))
+    ):
+        raw = list_workers()
+        _actions_taken.append("Executed list_workers tool")
+        return raw, list(_actions_taken)
+
+    # 7. Attendance summary for specific worker or overall
+    if (
+        "attendance summary" in msg_lower
+        or "summary" in msg_lower
+        or "attendance record" in msg_lower
+        or "attendance dikhao" in msg_lower
+        or "attendance" in msg_lower
+    ):
+        db = SessionLocal()
+        try:
+            workers = db.query(models.HealthWorker).all()
+            matched_worker = None
+            for w in workers:
+                if w.name.lower() in msg_lower:
+                    matched_worker = w
+                    break
+
+            raw = get_attendance_summary(matched_worker.name if matched_worker else None)
+            _actions_taken.append("Executed get_attendance_summary tool")
+            return raw, list(_actions_taken)
+        finally:
+            db.close()
+
+    return None
+
+
 # ---------------------- CHAT AGENT ----------------------
 
-def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
-    """
-    Main AI Agent runtime.
-    """
-
-    global _actions_taken
-    _actions_taken = []
-
-    try:
-        last_error = None
-
-        for key in GEMINI_KEYS:
-            try:
-                genai.configure(api_key=key)
-
-                model = genai.GenerativeModel(
-                    model_name=GEMINI_MODEL,
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    tools=TOOLS,
-                )
-
-                chat = model.start_chat(
-                    enable_automatic_function_calling=True
-                )
-
-                response = chat.send_message(user_message)
-
-                tool_output = ""
-
-                try:
-                    if response.text:
-                        tool_output = response.text.strip()
-                except Exception:
-                    tool_output = ""
+                executed_actions = list(_actions_context.get())
 
                 # If Gemini returned no text but a tool executed,
                 # show executed actions.
-                if not tool_output and _actions_taken:
-                    tool_output = "\n".join(_actions_taken)
+                if not tool_output and executed_actions:
+                    tool_output = "\n".join(executed_actions)
+def classify_attendance_intent(user_message: str) -> tuple[str | None, dict]:
+    """
+    Classify user message into an attendance operational intent with extracted parameters.
+    Handles Hindi, Hinglish, and English queries reliably.
+    """
+    msg = user_message.lower().strip()
 
-                # If nothing came back, try next key.
-                elif not tool_output:
-                    raise Exception("Gemini returned empty response.")
+    # 1. Low attendance queries
+    if any(k in msg for k in [
+        "kam attendance", "lowest attendance", "sabse kam", "low attendance",
+        "attendance drop", "defaulter", "bad attendance", "poor attendance"
+    ]):
+        days = 30
+        days_match = re.search(r"(\d+)\s*(?:days?|din)", msg)
+        if days_match:
+            days = int(days_match.group(1))
+        elif "week" in msg or "hafta" in msg:
+            days = 7
+        return "LOW_ATTENDANCE", {"days": days}
+
+    # 2. Who has not marked today / pending attendance
+    if any(k in msg for k in [
+        "nahi mark", "not marked", "pending attendance", "baki hai",
+        "nahi lagayi", "kisne nahi", "kiska baki", "unmarked"
+    ]):
+        return "WHO_NOT_MARKED", {}
+
+    # 3. Daily broadcast / WhatsApp status
+    if any(k in msg for k in [
+        "broadcast", "whatsapp", "daily update", "today ka summary",
+        "aaj ka update", "daily report", "status update"
+    ]):
+        return "DAILY_BROADCAST", {}
+
+    # 4. Weekly trend insights
+    if any(k in msg for k in ["weekly insights", "weekly report", "hafta ka report", "trend report", "hafta report"]):
+        lang = "en" if "english" in msg else "hi"
+        return "WEEKLY_INSIGHTS", {"language": lang}
+
+    # 5. List all workers
+    if ("list" in msg and "worker" in msg) or "all workers" in msg or "sab workers" in msg or "roster" in msg or "workers list" in msg:
+        return "LIST_WORKERS", {}
+
+    # 6. Mark attendance
+    if any(k in msg for k in ["mark", "lagao", "karo", "present", "absent", "leave", "half-day"]):
+        if any(status_word in msg for status_word in ["present", "absent", "leave", "half-day", "chhutti", "half day"]):
+            status = "present"
+            if "absent" in msg:
+                status = "absent"
+            elif "leave" in msg or "chhutti" in msg:
+                status = "leave"
+            elif "half" in msg:
+                status = "half-day"
+
+            date_str = "today"
+            if "yesterday" in msg or ("kal" in msg and "beeta" in msg):
+                date_str = "yesterday"
+
+            name_match = re.search(r"(?:mark|lagao|karo)?\s*([a-zA-Z\u0900-\u097F\s]{2,25}?)\s*(?:ko|ki)?\s*(?:aaj|kal|today|yesterday)?\s*(?:ko)?\s*(?:present|absent|leave|half|chhutti)", user_message, re.IGNORECASE)
+            name = name_match.group(1).strip() if name_match else ""
+            name = re.sub(r"^(?:please|kripya|mark|lagao|karo)\s+", "", name, flags=re.IGNORECASE).strip()
+            if name:
+                return "MARK_ATTENDANCE", {"worker_name": name, "status": status, "date_str": date_str}
+
+    # 7. Attendance summary for specific worker
+    if any(k in msg for k in ["summary", "record", "history", "details"]):
+        name_match = re.search(r"([a-zA-Z\u0900-\u097F\s]{2,25}?)\s*(?:ka|ki|ke)?\s*(?:attendance)?\s*(?:summary|record|report)", user_message, re.IGNORECASE)
+        name = name_match.group(1).strip() if name_match else ""
+        name = re.sub(r"^(?:show|dikhao|get|batao)\s+", "", name, flags=re.IGNORECASE).strip()
+        if name:
+            return "ATTENDANCE_SUMMARY", {"worker_name": name, "days": 30}
+
+    return None, {}
+
+
+def execute_attendance_intent(intent: str, params: dict) -> tuple[str, list[str]]:
+    """
+    Directly execute the corresponding attendance tool based on classified intent.
+    Provides bulletproof reliability when LLM tool dispatching fails or runs offline.
+    """
+
+    actions: list[str] = []
+    _actions_var.set(actions)
+    global _actions_taken
+    _actions_taken = actions
+
+    if intent == "LOW_ATTENDANCE":
+        days = params.get("days", 30)
+        res = find_low_attendance_workers(min_percent=75.0, days=days)
+        actions = [f"Analyzed low attendance workers for the last {days} days"]
+        return res, actions
+
+    elif intent == "WHO_NOT_MARKED":
+        res = who_has_not_marked_today()
+        actions = ["Checked pending attendance records for today"]
+        return res, actions
+
+    elif intent == "DAILY_BROADCAST":
+        res = generate_daily_broadcast()
+        actions = ["Generated daily operational broadcast update"]
+        return res, actions
+
+    elif intent == "WEEKLY_INSIGHTS":
+        lang = params.get("language", "hi")
+        res = generate_weekly_insights(language=lang)
+        actions = [f"Generated weekly trend insights ({lang})"]
+        return res, actions
+
+    elif intent == "LIST_WORKERS":
+        res = list_workers()
+        actions = ["Retrieved registered health workers roster"]
+        return res, actions
+
+    elif intent == "MARK_ATTENDANCE":
+        name = params.get("worker_name", "")
+        status = params.get("status", "present")
+        date_str = params.get("date_str", "today")
+        res = mark_attendance(worker_name=name, status=status, date_str=date_str)
+        return res, list(_actions_taken)
+
+    elif intent == "ATTENDANCE_SUMMARY":
+        name = params.get("worker_name", "")
+        days = params.get("days", 30)
+        res = get_attendance_summary(worker_name=name, days=days)
+        actions = [f"Retrieved attendance summary for {name or 'all workers'}"]
+        return res, actions
+
+    return "No matching operations tool found.", []
 
                 print("\n====================================")
                 print("USING KEY:", key[:10] + "...")
                 print("USER:", user_message)
                 print("RESPONSE:")
                 print(tool_output)
-                print("ACTIONS:", _actions_taken)
+                print("ACTIONS:", executed_actions)
                 print("====================================\n")
 
-                return tool_output, list(_actions_taken)
+                return tool_output, executed_actions
 
-            except Exception as e:
-                print(f"[Gemini Failed] {key[:10]}... -> {e}")
-                last_error = e
-                continue
+# ---------------------- CHAT AGENT ----------------------
 
-        raise Exception(f"All Gemini API Keys failed: {last_error}")
+def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
+    """
+    Main AI Agent runtime.
+    Features:
+    - Multi-key and multi-model failover (Gemini 2.0 Flash / 1.5 Flash / 1.5 Pro)
+    - Automatic function calling for dynamic conversations
+    - Bilingual intent detection safeguard (prevents LLM translation fallback)
+    - Deterministic offline execution if API is unreachable
+    """
+    clear_recorded_actions()
 
-    except Exception as e:
-        print(f"[Gemini Error] {e}")
+    intent, params = classify_attendance_intent(user_message)
 
-    # Local fallback intent parser and tool execution when API keys are missing or API fails locally
-    msg_lower = user_message.lower()
-    try:
-        if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
-            res = who_has_not_marked_today()
-            return res, ["Executed who_has_not_marked_today tool"]
-        elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
-            res = find_low_attendance_workers()
-            return res, ["Executed find_low_attendance_workers tool"]
-        elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
-            res = generate_daily_broadcast()
-            return res, ["Executed generate_daily_broadcast tool"]
-        elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
-            res = generate_weekly_insights()
-            return res, ["Executed generate_weekly_insights tool"]
-        elif "list" in msg_lower or "worker" in msg_lower:
-            res = list_workers()
-            return res, ["Executed list_workers tool"]
-        elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
-            res = get_attendance_summary()
-            return res, ["Executed get_attendance_summary tool"]
-    except Exception as fallback_err:
-        print(f"[Local Tool Fallback Error] {fallback_err}")
+    # 1. If Gemini keys are available, attempt tool-using agent
+    if GEMINI_KEYS:
+        for key in GEMINI_KEYS:
+            for model_name in FALLBACK_MODELS:
+                try:
+                    genai.configure(api_key=key)
+
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        tools=TOOLS,
+                    )
+
+                    chat = model.start_chat(
+                        enable_automatic_function_calling=True
+                    )
+
+                    response = chat.send_message(user_message)
+                    tool_output = ""
+
+                    try:
+                        if response.text:
+                            tool_output = response.text.strip()
+                    except Exception:
+                        tool_output = ""
+
+                    # Safeguard: If Gemini returned text WITHOUT executing tools,
+                    # but the user query was an attendance intent, execute the tool directly.
+                    if not _actions_taken and intent:
+                        print(f"[Safeguard Triggered] Gemini did not call tool for intent {intent}. Executing directly.")
+                        return execute_attendance_intent(intent, params)
+
+                    # If tools were executed but no text returned, show actions
+                    if not tool_output and _actions_taken:
+                        tool_output = "\n".join(_actions_taken)
+
+                    if tool_output:
+                        return tool_output, list(_actions_taken)
+
+                except Exception as e:
+                    print(f"[Gemini Failed] {key[:10]}... ({model_name}) -> {e}")
+                    continue
+
+    # 2. Offline / local fallback: If Gemini keys failed or are not configured,
+    # and the user asked an attendance query, execute the tool directly!
+    if intent:
+        print(f"[Offline Intent Fallback] Executing {intent} directly.")
+        return execute_attendance_intent(intent, params)
+
+    # 3. General questions fallback via OpenRouter if configured
+    if OPENROUTER_API_KEY:
+        try:
+            raw_reply = call_openrouter(user_message)
+            return raw_reply, []
+        except Exception as e:
+            print(f"[OpenRouter Error] {e}")
+
+        except Exception as e:
+            print(f"[Gemini Error] {e}")
+
+        # Local fallback intent parser and tool execution when API keys are missing or API fails locally
+        msg_lower = user_message.lower()
+        try:
+            if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
+                res = who_has_not_marked_today()
+                return res, ["Executed who_has_not_marked_today tool"]
+            elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
+                res = find_low_attendance_workers()
+                return res, ["Executed find_low_attendance_workers tool"]
+            elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
+                res = generate_daily_broadcast()
+                return res, ["Executed generate_daily_broadcast tool"]
+            elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
+                res = generate_weekly_insights()
+                return res, ["Executed generate_weekly_insights tool"]
+            elif "list" in msg_lower or "worker" in msg_lower:
+                res = list_workers()
+                return res, ["Executed list_workers tool"]
+            elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
+                res = get_attendance_summary()
+                return res, ["Executed get_attendance_summary tool"]
+        except Exception as fallback_err:
+            print(f"[Local Tool Fallback Error] {fallback_err}")
+
+    # Fallback to local database-backed tool dispatcher for attendance and roster tasks
+    local_tool_res = _dispatch_local_attendance_tool(user_message)
+    if local_tool_res is not None:
+        return local_tool_res
 
     try:
         raw_reply = call_openrouter(user_message)
         return raw_reply, []
 
-    except Exception as e:
-        print(f"[OpenRouter Error] {e}")
+        except Exception as e:
+            print(f"[OpenRouter Error] {e}")
 
-        return (
-            """❌ AI Operations Agent is currently unavailable.
+            return (
+                """❌ AI Operations Agent is currently unavailable.
 
 Please try again after a few seconds.""",
-            [],
-        )
+                [],
+            )
+    finally:
+        _actions_taken_var.reset(token)
+
+
+def __getattr__(name: str):
+    """Provides backward compatibility for direct access to `_actions_taken`."""
+    if name == "_actions_taken":
+        return list(_actions_context.get())
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

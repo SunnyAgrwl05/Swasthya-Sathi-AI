@@ -141,9 +141,8 @@ class LeaveRecord(Base):
 
     leave_type = Column(
         String,
-        default="casual",
         nullable=False,
-    )
+    )  # maternity / sick / casual / bereavement / training
 
     reason = Column(
         Text,
@@ -154,6 +153,14 @@ class LeaveRecord(Base):
         String,
         default="supervisor",
         nullable=False,
+    status = Column(
+        String,
+        default="Approved",
+    )  # Approved / Pending / Rejected
+
+    approved_by = Column(
+        String,
+        default="Supervisor",
     )
 
     created_at = Column(
@@ -266,6 +273,43 @@ class NotificationLog(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+# =====================================================
+# Offline SMS Dispatch Queue
+# =====================================================
+
+class SMSQueueItem(Base):
+    __tablename__ = "sms_queue"
+
+    id = Column(Integer, primary_key=True, index=True)
+    worker_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    status = Column(String, default="pending")  # pending / sent / failed
+    attempts = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    retry_interval_seconds = Column(Integer, default=60)
+    next_retry_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "worker_name": self.worker_name,
+            "phone": self.phone,
+            "message": self.message,
+            "status": self.status,
+            "attempts": self.attempts,
+            "max_retries": self.max_retries,
+            "retry_interval_seconds": self.retry_interval_seconds,
+            "next_retry_at": self.next_retry_at.isoformat() if self.next_retry_at else None,
+            "last_error": self.last_error,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 # =====================================================

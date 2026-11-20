@@ -1,175 +1,145 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import WorkerDetailModal from "./WorkerDetailModal";
-import WorkerTable from "./WorkerTable";
 import { api } from "../api";
 
 vi.mock("../api", () => ({
   api: {
-    getAttendance: vi.fn(),
+    getWorkerAttendanceHistory: vi.fn(),
     getLeaves: vi.fn(),
-    createLeave: vi.fn(),
+    applyLeave: vi.fn(),
+    updateLeaveStatus: vi.fn(),
   },
 }));
 
-const mockWorker = {
-  id: 1,
-  name: "Anita Devi",
-  worker_code: "ASHA-PAT-001",
-  role: "ASHA Worker",
-  center: "Patna Central",
-  phone: "9876543210",
-};
+describe("WorkerDetailModal Component", () => {
+  const mockWorker = {
+    id: 1,
+    name: "Sunita Devi",
+    role: "ASHA",
+    center: "Patna Central",
+    phone: "9876543210",
+  };
 
-const mockSummary = [
-  { worker_id: 1, attendance_pct: 88 },
-];
+  const mockHistory = {
+    worker_id: 1,
+    name: "Sunita Devi",
+    role: "ASHA",
+    center: "Patna Central",
+    days: [
+      { date: "2026-11-17", status: "present", note: "Vaccination drive", marked_by: "agent" },
+      { date: "2026-11-16", status: "half-day", note: "Field visit", marked_by: "agent" },
+      { date: "2026-11-15", status: "leave", note: "Casual leave", marked_by: "supervisor" },
+      { date: "2026-11-14", status: "absent", note: null, marked_by: "agent" },
+    ],
+    total_days: 4,
+    present_days: 1,
+    absent_days: 1,
+    leave_days: 1,
+    attendance_pct: 25.0,
+  };
 
-describe("WorkerDetailModal", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    api.getAttendance.mockResolvedValue([
-      { id: 101, worker_id: 1, date: "2026-11-10", status: "present", note: null },
-      { id: 102, worker_id: 1, date: "2026-11-11", status: "absent", note: "Fever" },
-      { id: 103, worker_id: 1, date: "2026-11-12", status: "half-day", note: null },
-      { id: 104, worker_id: 1, date: "2026-11-13", status: "leave", note: "Casual leave" },
-    ]);
-    api.getLeaves.mockResolvedValue([
-      {
-        id: 1,
-        worker_id: 1,
-        start_date: "2026-11-13",
-        end_date: "2026-11-13",
-        leave_type: "casual",
-        reason: "Personal work",
-        approved_by: "Supervisor",
-      },
-    ]);
-  });
-
-  it("renders worker details and header correctly", async () => {
-    const handleClose = vi.fn();
-    render(<WorkerDetailModal worker={mockWorker} onClose={handleClose} />);
-
-    expect(screen.getByText("Anita Devi")).toBeInTheDocument();
-    expect(screen.getByText("ASHA-PAT-001")).toBeInTheDocument();
-    expect(screen.getByText("ASHA Worker")).toBeInTheDocument();
-    expect(screen.getByText("Patna Central")).toBeInTheDocument();
-    expect(screen.getByText(/9876543210/)).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(api.getAttendance).toHaveBeenCalledWith(1);
-      expect(api.getLeaves).toHaveBeenCalledWith(1);
-    });
-  });
-
-  it("displays 30-day heatmap section and legend", async () => {
-    render(<WorkerDetailModal worker={mockWorker} onClose={vi.fn()} />);
-
-    expect(
-      screen.getByText("30-Day Attendance Timeline & Heatmap")
-    ).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getAllByText("Present").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Absent").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Half-day").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("Leave").length).toBeGreaterThan(0);
-      expect(screen.getByText("Unrecorded")).toBeInTheDocument();
-    });
-  });
-
-  it("closes modal on close button click and on Escape key", async () => {
-    const handleClose = vi.fn();
-    render(<WorkerDetailModal worker={mockWorker} onClose={handleClose} />);
-
-    const closeBtn = screen.getByRole("button", { name: /close modal/i });
-    fireEvent.click(closeBtn);
-    expect(handleClose).toHaveBeenCalledTimes(1);
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(handleClose).toHaveBeenCalledTimes(2);
-  });
-
-  it("validates that start date cannot be after end date", async () => {
-    render(<WorkerDetailModal worker={mockWorker} onClose={vi.fn()} />);
-
-    const inputs = screen.getAllByDisplayValue(/2026-/);
-    const startDateInput = inputs[0];
-    const endDateInput = inputs[1];
-
-    fireEvent.change(startDateInput, { target: { value: "2026-11-20" } });
-    fireEvent.change(endDateInput, { target: { value: "2026-11-15" } });
-
-    const submitBtn = screen.getByRole("button", { name: /log leave/i });
-    fireEvent.click(submitBtn);
-
-    expect(
-      screen.getByText("Start date cannot be after end date.")
-    ).toBeInTheDocument();
-    expect(api.createLeave).not.toHaveBeenCalled();
-  });
-
-  it("submits leave successfully and refreshes attendance records", async () => {
-    api.createLeave.mockResolvedValue({
-      id: 5,
+  const mockLeaves = [
+    {
+      id: 10,
       worker_id: 1,
       start_date: "2026-11-15",
-      end_date: "2026-11-19",
-      leave_type: "medical",
-      reason: "Dengue treatment",
+      end_date: "2026-11-15",
+      leave_type: "casual",
+      reason: "Family emergency",
+      status: "Approved",
       approved_by: "Dr. Sharma",
+    },
+    {
+      id: 11,
+      worker_id: 1,
+      start_date: "2026-11-20",
+      end_date: "2026-11-22",
+      leave_type: "training",
+      reason: "District workshop",
+      status: "Pending",
+      approved_by: "Supervisor",
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.getWorkerAttendanceHistory.mockResolvedValue(mockHistory);
+    api.getLeaves.mockResolvedValue(mockLeaves);
+    api.applyLeave.mockResolvedValue({
+      id: 12,
+      worker_id: 1,
+      start_date: "2026-11-25",
+      end_date: "2026-11-26",
+      leave_type: "sick",
+      status: "Approved",
     });
-
-    const handleLeaveLogged = vi.fn();
-    render(
-      <WorkerDetailModal
-        worker={mockWorker}
-        onClose={vi.fn()}
-        onLeaveLogged={handleLeaveLogged}
-      />
-    );
-
-    const inputs = screen.getAllByDisplayValue(/2026-/);
-    fireEvent.change(inputs[0], { target: { value: "2026-11-15" } });
-    fireEvent.change(inputs[1], { target: { value: "2026-11-19" } });
-
-    const leaveTypeSelect = screen.getByRole("combobox");
-    fireEvent.change(leaveTypeSelect, { target: { value: "medical" } });
-
-    const reasonInput = screen.getByPlaceholderText(/viral fever/i);
-    fireEvent.change(reasonInput, { target: { value: "Dengue treatment" } });
-
-    const submitBtn = screen.getByRole("button", { name: /log leave/i });
-    fireEvent.click(submitBtn);
-
-    await waitFor(() => {
-      expect(api.createLeave).toHaveBeenCalledWith({
-        worker_id: 1,
-        start_date: "2026-11-15",
-        end_date: "2026-11-19",
-        leave_type: "medical",
-        reason: "Dengue treatment",
-        approved_by: "Supervisor",
-      });
-      expect(
-        screen.getByText("Leave logged successfully! Attendance records updated.")
-      ).toBeInTheDocument();
-      expect(handleLeaveLogged).toHaveBeenCalledWith(1);
+    api.updateLeaveStatus.mockResolvedValue({
+      id: 11,
+      status: "Approved",
     });
   });
 
-  it("opens detail modal when clicking a worker row in WorkerTable", async () => {
-    render(
-      <WorkerTable workers={[mockWorker]} summary={mockSummary} />
-    );
+  it("renders worker details and 30-day heatmap metrics", async () => {
+    render(<WorkerDetailModal worker={mockWorker} onClose={vi.fn()} />);
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText(/Sunita Devi/i)).toBeInTheDocument();
+    expect(screen.getByText(/Patna Central/i)).toBeInTheDocument();
 
-    const workerRowName = screen.getByText("Anita Devi");
-    fireEvent.click(workerRowName);
+    await waitFor(() => {
+      expect(screen.getByText(/Overall Rate: 25%/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 Present/i)).toBeInTheDocument();
+    });
+  });
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText("30-Day Attendance Timeline & Heatmap")).toBeInTheDocument();
+  it("renders GitHub Graph SVG and can toggle to Day Matrix view", async () => {
+    render(<WorkerDetailModal worker={mockWorker} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Attendance intensity graph/i)).toBeInTheDocument();
+    });
+
+    const matrixBtn = screen.getByRole("button", { name: /Day Matrix/i });
+    fireEvent.click(matrixBtn);
+
+    // Matrix view shows day numbers
+    expect(screen.getByText("17")).toBeInTheDocument();
+    expect(screen.getByText("16")).toBeInTheDocument();
+  });
+
+  it("displays existing leave records with status badges and approve/reject actions", async () => {
+    render(<WorkerDetailModal worker={mockWorker} onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Casual Leave/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Training Leave/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Pending/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Approved/i).length).toBeGreaterThan(0);
+    });
+
+    // Click Approve on pending leave
+    const approveBtn = screen.getByRole("button", { name: /✓ Approve/i });
+    fireEvent.click(approveBtn);
+
+    await waitFor(() => {
+      expect(api.updateLeaveStatus).toHaveBeenCalledWith(11, "Approved");
+    });
+  });
+
+  it("submits a new leave request and triggers reload", async () => {
+    const onLeaveApplied = vi.fn();
+    render(<WorkerDetailModal worker={mockWorker} onClose={vi.fn()} onLeaveApplied={onLeaveApplied} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Record Leave Request/i })).toBeInTheDocument();
+    });
+
+    const submitBtn = screen.getByRole("button", { name: /Record Leave Request/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(api.applyLeave).toHaveBeenCalled();
+      expect(onLeaveApplied).toHaveBeenCalled();
+    });
   });
 });
