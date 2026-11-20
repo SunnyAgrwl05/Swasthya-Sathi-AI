@@ -2,12 +2,13 @@ import datetime
 import json
 import time
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+import csv_service
 import models
 import schemas
 from agent import (
@@ -94,9 +95,59 @@ def delete_worker(worker_id: int, db: Session = Depends(get_db)):
     return {"deleted": worker_id}
 
 
+@app.get("/api/workers/sample-csv")
+def get_sample_workers_csv():
+    """Download pre-formatted sample CSV template for bulk worker onboarding."""
+    csv_text = csv_service.get_sample_csv_content()
+    return Response(
+        content="\ufeff" + csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="sample_workers_template.csv"'},
+    )
+
+
+@app.post("/api/workers/import-csv", response_model=schemas.WorkerImportSummary)
+async def import_workers_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Bulk import health workers from CSV upload with deduplication and summary stats."""
+    if not file.filename or not file.filename.lower().endswith((".csv", ".txt")):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .csv files are supported for bulk worker import",
+        )
+    content = await file.read()
+    summary = csv_service.parse_and_import_workers(content, db)
+    return summary
+
+
 # =====================================================
 # ATTENDANCE
 # =====================================================
+
+@app.get("/api/attendance/export-csv")
+def export_attendance_csv(
+    month: str | None = None,
+    center: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Export monthly attendance matrix for all health workers formatted for Excel."""
+    if not month:
+        now = datetime.date.today()
+        month = f"{now.year}-{now.month:02d}"
+    try:
+        csv_text = csv_service.generate_attendance_csv(db, month, center)
+        safe_center = center.replace(" ", "_") if center and center.lower() != "all" else "all"
+        filename = f"attendance_{safe_center}_{month}.csv"
+        return Response(
+            content=csv_text,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @app.get("/api/attendance", response_model=list[schemas.AttendanceOut])
 def get_attendance(

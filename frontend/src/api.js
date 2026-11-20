@@ -54,6 +54,26 @@ export const api = {
     }),
   getNotificationLogs: (limit = 20) =>
     req(`/api/notifications/logs?limit=${limit}`),
+  importWorkersCsv: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/api/workers/import-csv`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.detail || `API error ${res.status}`)
+    }
+    return res.json()
+  },
+  exportAttendanceCsvUrl: (month, center) => {
+    const params = new URLSearchParams()
+    if (month) params.append('month', month)
+    if (center && center !== 'All') params.append('center', center)
+    return `${BASE}/api/attendance/export-csv?${params.toString()}`
+  },
+  sampleWorkersCsvUrl: `${BASE}/api/workers/sample-csv`,
 }
 
 
