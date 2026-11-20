@@ -33,6 +33,10 @@ export default function DailyBroadcast() {
         } catch {
             setSmsResult({
                 status: "failed",
+                total_recipients: 0,
+                sent: 0,
+                failed: 1,
+                errors: ["Failed to connect to SMS dispatch service"],
                 sent: 0,
                 failed: 1,
                 errors: ["Failed to connect to SMS dispatch gateway"],

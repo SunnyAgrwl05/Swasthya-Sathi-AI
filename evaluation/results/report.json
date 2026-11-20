@@ -1,0 +1,67 @@
+{
+  "total_evaluated": 5,
+  "mean_clinical_accuracy": 0.917,
+  "mean_semantic_relevance": 0.464,
+  "mean_completeness": 0.958,
+  "mean_latency_ms": 45.0,
+  "overall_composite_score": 82.21,
+  "evaluation_timestamp": "2026-11-17 02:42:12 UTC",
+  "benchmark_tier": "Needs Optimization",
+  "details": [
+    {
+      "id": "EVAL-001",
+      "query": "Bacche ko dast aur ulti hai, primary health centre par kya upchar diya jana chahiye?",
+      "category": "Child Health",
+      "response_snippet": "Bachon me acute watery diarrhea ke liye Oral Rehydration Salts (ORS) aur 14 din tak Zinc supplementation (10-20 mg/day) ...",
+      "latency_ms": 45.0,
+      "clinical_accuracy": 1.0,
+      "semantic_relevance": 0.182,
+      "completeness": 1.0,
+      "composite_quality_score": 79.55
+    },
+    {
+      "id": "EVAL-002",
+      "query": "Universal Immunization Programme ke antargat janam ke samay kaun se teeke lagte hain?",
+      "category": "Immunization",
+      "response_snippet": "Janam ke samay 3 mukhya teeke diye jate hain: BCG (tuberculosis se bachav), OPV birth dose (polio), aur Hepatitis B birt...",
+      "latency_ms": 45.0,
+      "clinical_accuracy": 1.0,
+      "semantic_relevance": 0.333,
+      "completeness": 1.0,
+      "composite_quality_score": 83.32
+    },
+    {
+      "id": "EVAL-003",
+      "query": "Garbhavastha me kitni ANC jaanch aur IFA goliya di jani chahiye?",
+      "category": "Maternal Health",
+      "response_snippet": "Pratyek garbhwati mahila ko kam se kam 4 Antenatal Care (ANC) checkup karwane chahiye. Saath hi kam se kam 180 Iron Foli...",
+      "latency_ms": 45.0,
+      "clinical_accuracy": 1.0,
+      "semantic_relevance": 0.667,
+      "completeness": 1.0,
+      "composite_quality_score": 91.68
+    },
+    {
+      "id": "EVAL-004",
+      "query": "Kala-Azar ke mukhya lakshan kya hain aur iski pushti ke liye kaun sa test hota hai?",
+      "category": "Endemic Diseases",
+      "response_snippet": "15 din se adhik ka bukhar jo antibiotics par theek na ho, spleen (pleeha) ka badhna aur anemia Kala-Azar ke mukhya laksh...",
+      "latency_ms": 45.0,
+      "clinical_accuracy": 0.833,
+      "semantic_relevance": 0.636,
+      "completeness": 0.917,
+      "composite_quality_score": 82.14
+    },
+    {
+      "id": "EVAL-005",
+      "query": "PHC supervisor ke roop me low attendance workers ko kaise track kiya jata hai?",
+      "category": "Operations",
+      "response_snippet": "ASHA aur ANM workers ki haziri daily monitor ki jati hai. Pichhle 30 dinon me 75% se kam attendance wale workers ko low-...",
+      "latency_ms": 45.0,
+      "clinical_accuracy": 0.75,
+      "semantic_relevance": 0.5,
+      "completeness": 0.875,
+      "composite_quality_score": 74.38
+    }
+  ]
+}

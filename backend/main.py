@@ -1,8 +1,10 @@
 import datetime
+import json
 import time
 
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,7 @@ from agent import (
     generate_weekly_insights,
 )
 from database import engine, get_db
+from hallucination_detector import get_detector
 from hallucination_detector import detect_hallucination
 from sms_dispatcher import (
     dispatch_batch_broadcast_sms,
@@ -28,7 +31,13 @@ app = FastAPI(
     title="Swasthya Sathi AI",
     version="1.0.0",
 )
+
 class WeeklyInsightsRequest(BaseModel):
+    language: str = "hi"
+
+class MedicalAuditRequest(BaseModel):
+    query: str
+    response: str
     language: str = "hi"
 
 app.add_middleware(
@@ -575,11 +584,65 @@ def chat(
 
     db.commit()
 
+    # Run hallucination / medical-safety check on every AI reply
+    detector = get_detector()
+    safety_report = detector.assess_response(reply, req.message)
+
     return schemas.ChatResponse(
         reply=reply,
         actions_taken=actions,
+        safety_warning=safety_report.warning_message,
+        is_flagged=safety_report.is_flagged,
+        confidence_score=safety_report.confidence_score,
         hallucination_check=schemas.HallucinationCheckOut(**check_result.to_dict()),
     )
+
+
+@app.post("/api/chat/stream")
+def chat_stream(
+    req: schemas.ChatRequest,
+    db: Session = Depends(get_db),
+):
+    db.add(
+        models.ChatLog(
+            role="user",
+            message=req.message,
+        )
+    )
+    db.commit()
+
+    def event_generator():
+        start_time = time.time()
+        reply, actions = chat_with_agent(req.message)
+        exec_time = int((time.time() - start_time) * 1000)
+
+        db_session = SessionLocal()
+        try:
+            db_session.add(models.ChatLog(role="agent", message=reply))
+            db_session.add(
+                models.AgentLog(
+                    query=req.message,
+                    response=reply,
+                    tools_used=", ".join(actions) if actions else None,
+                    execution_time_ms=exec_time,
+                    status="Success",
+                )
+            )
+            db_session.commit()
+        finally:
+            db_session.close()
+
+        if actions:
+            yield f"data: {json.dumps({'type': 'actions', 'actions': actions})}\n\n"
+
+        words = reply.split(" ")
+        for i, word in enumerate(words):
+            chunk = word + (" " if i < len(words) - 1 else "")
+            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+
+        yield f"data: {json.dumps({'type': 'done', 'reply': reply, 'actions': actions})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/safety/check-hallucination", response_model=schemas.HallucinationCheckOut)
@@ -597,6 +660,22 @@ def check_hallucination_endpoint(req: schemas.HallucinationCheckRequest):
 
 
 # =====================================================
+# SAFETY VERIFICATION
+# =====================================================
+
+@app.post("/api/safety/verify", response_model=schemas.SafetyVerificationResponse)
+def verify_response_safety(req: schemas.SafetyVerificationRequest):
+    """
+    Standalone endpoint to run the hallucination/medical-safety check on any
+    AI-generated text.  Useful for frontend or integration testing.
+    """
+    from hallucination_detector import verify_medical_response  # local import keeps startup clean
+
+    result = verify_medical_response(req.response_text, req.query or "")
+    return schemas.SafetyVerificationResponse(**result)
+
+
+# =====================================================
 # REPORTS
 # =====================================================
 
@@ -611,7 +690,7 @@ def daily_broadcast(dispatch_sms: bool = False, db: Session = Depends(get_db)):
                 phone=w.phone,
                 notification_type="WhatsApp",
                 message=msg,
-                status="Sent"
+                status="Sent",
             )
         )
     db.commit()
@@ -754,4 +833,3 @@ def search_knowledge(q: str = ""):
     kb = get_health_knowledge_base()
     results = kb.search(q, top_k=3)
     return {"query": q, "results": results}
-

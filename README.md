@@ -1,16 +1,12 @@
-<div align="center">
-
-# 🩺 Swasthya Sathi AI
-### AI Workforce Intelligence & Attendance Monitoring for Rural Healthcare Teams
+# Swasthya Sathi AI (स्वास्थ्य साथी AI)
 
 [![CI Pipeline](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI/actions/workflows/ci.yml)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.116-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-18.3-61DAFB.svg?logo=react&logoColor=black)](https://react.dev)
-[![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?logo=vite&logoColor=white)](https://vitejs.dev)
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org)
-[![Node](https://img.shields.io/badge/Node.js-18%20%7C%2020-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB.svg?logo=react&logoColor=black)](https://vitejs.dev)
+[![Pytest](https://img.shields.io/badge/Tests-Pytest%20%2B%20Vitest-0A9EDC.svg?logo=pytest&logoColor=white)](backend/tests/)
+
+Swasthya Sathi AI is an AI-powered attendance and workforce monitoring system for rural healthcare teams. It combines a FastAPI backend, a React dashboard, and an AI operations agent that can understand supervisor requests, manage attendance records, summarize trends, and generate operational updates.
 
 <p align="center">
   <b>Bridging the gap in frontline public healthcare tracking across Bihar's Primary Healthcare Centre (PHC) Network through autonomous tool-calling AI and real-time operational analytics.</b>
@@ -379,20 +375,70 @@ npm run build      # Verify production Vite build
 * **Solution**: Verify `uvicorn` is running on `http://127.0.0.1:8000`. In development, ensure `VITE_API_URL` in `frontend/.env` is either empty or set to `http://localhost:8000`.
 </details>
 
+## Project Structure
+
+```text
+Swasthya-Sathi-AI/
+├── assets/                  # Application banners, UI screenshots, and diagrams
+├── backend/                 # FastAPI REST application
+│   ├── tests/               # Pytest automated test suite
+│   ├── agent.py             # Operations AI Agent and tool calling logic
+│   ├── database.py          # SQLAlchemy SQLite connection and session management
+│   ├── main.py              # FastAPI endpoint declarations and route handlers
+│   ├── models.py            # SQLAlchemy database tables and relationships
+│   ├── schemas.py           # Pydantic request and response schemas
+│   ├── seed.py              # Sample health worker seeding script
+│   └── requirements.txt     # Python backend dependencies
+├── docs/                    # Technical architecture, API, and setup documentation
+│   ├── api.md               # Detailed REST API specification
+│   ├── architecture.md      # Deep dive into system architecture and data flows
+│   ├── methodology.md       # Operational workflow and design rationale
+│   └── setup.md             # Step-by-step local development setup guide
+├── frontend/                # React 18 + Vite frontend application
+│   ├── src/                 # React UI components, API clients, and utilities
+│   ├── package.json         # Frontend dependencies and npm scripts
+│   └── vite.config.js       # Vite build configuration
+├── evaluation/              # AI quality evaluation datasets and metrics framework
+├── .env.example             # Environment configuration template
+├── CONTRIBUTING.md          # Contributor onboarding and pull request guidelines
+├── CODE_OF_CONDUCT.md       # Community standards and code of conduct
+├── docker-compose.yml       # Multi-container orchestration specification
+└── LICENSE                  # MIT Open Source License
+```
+
+## Documentation
+
+- [System Architecture](docs/architecture.md) — Detailed flow diagrams and component interaction.
+- [REST API Reference](docs/api.md) — Comprehensive endpoint specifications and sample payloads.
+- [Local Setup Guide](docs/setup.md) — Prerequisites and environment setup.
+- [Methodology](docs/methodology.md) — Design principles and operational workflow.
+- [Roadmap](docs/roadmap.md) — Planned enhancements and milestone tracking.
+- [Contributing Guide](CONTRIBUTING.md) — Issue assignment and PR contribution flow.
+- [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards and pledge.
+
+## Troubleshooting
+
+### 1. `uvicorn: command not found`
+Ensure your virtual environment is activated before starting the server:
+```bash
+# Windows
+.\.venv\Scripts\Activate.ps1
+# Linux / macOS
+source .venv/bin/activate
+```
+
+### 2. CORS Errors (`Cross-Origin Request Blocked`)
+Check that `frontend/.env` has `VITE_API_URL=http://localhost:8000` set correctly and restart Vite (`npm run dev`).
+
+### 3. Database Locked or Permission Errors
+If you encounter `sqlite3.OperationalError: database is locked`, verify that no dangling uvicorn instances are running in the background.
+
+### 4. Running Without Gemini API Key
+The application can run and pass all tests without an external API key. Mock fallback modes are built-in for offline local development and testing.
+
 ---
 
-## 🤝 Contributing
-
-We welcome contributions! Please review our contributor documentation before submitting issues or pull requests:
-
-* 📘 [Contributing Guide (CONTRIBUTING.md)](CONTRIBUTING.md) — Workflow, code standards, and PR process.
-* 📜 [Code of Conduct (CODE_OF_CONDUCT.md)](CODE_OF_CONDUCT.md) — Community pledge and guidelines.
-* 🛠️ [Local Setup Guide (docs/setup.md)](docs/setup.md) — Step-by-step developer setup.
-* 🗺️ [Project Roadmap (docs/roadmap.md)](docs/roadmap.md) — Future milestones and features.
-
----
-
-## 📄 License
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening an issue or pull request.
 
 This project is open-source software licensed under the **[MIT License](LICENSE)**.
 

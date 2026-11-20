@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class WorkerCreate(BaseModel):
@@ -61,6 +61,23 @@ class HallucinationCheckOut(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     actions_taken: list[str] = []
+    safety_warning: str | None = None
+    is_flagged: bool = False
+    confidence_score: float | None = None
+
+
+class SafetyVerificationRequest(BaseModel):
+    response_text: str
+    query: str | None = ""
+
+
+class SafetyVerificationResponse(BaseModel):
+    confidence_score: float
+    risk_level: str
+    is_flagged: bool
+    warning_message: str | None = None
+    flagged_reasons: list[str] = []
+    grounded_terms: list[str] = []
     hallucination_check: HallucinationCheckOut | None = None
 
 
