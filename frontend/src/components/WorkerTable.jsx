@@ -1,4 +1,6 @@
 import { memo, useMemo, useState } from "react";
+import WorkerDetailModal from "./WorkerDetailModal";
+import { api } from "../api";
 
 function badge(pct) {
   if (pct >= 85) {
@@ -28,13 +30,76 @@ function badge(pct) {
   };
 }
 
+function trendIndicator(delta, lastWeek, thisWeek) {
+  if (delta === null || delta === undefined) {
+    return null;
+  }
+
+  if (delta > 0) {
+    return {
+      arrow: "↑",
+      text: `+${delta}%`,
+      cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+      ariaLabel: `Increased by ${delta}% week-over-week`,
+      tooltip: `Week-over-week: ${lastWeek ?? 0}% → ${thisWeek ?? 0}% (+${delta}%)`,
+    };
+  }
+
+  if (delta < 0) {
+    return {
+      arrow: "↓",
+      text: `${delta}%`,
+      cls: "text-rose-400 bg-rose-500/10 border-rose-500/30",
+      ariaLabel: `Decreased by ${Math.abs(delta)}% week-over-week`,
+      tooltip: `Week-over-week: ${lastWeek ?? 0}% → ${thisWeek ?? 0}% (${delta}%)`,
+    };
+  }
+
+  return {
+    arrow: "→",
+    text: "0%",
+    cls: "text-white/50 bg-white/5 border-white/10",
+    ariaLabel: "Unchanged week-over-week",
+    tooltip: `Week-over-week: unchanged (${thisWeek ?? 0}%)`,
+  };
+}
+
 function WorkerTable({
   workers = [],
   summary = [],
+  onRefresh,
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [centerFilter, setCenterFilter] = useState("All");
+  const [selectedWorker, setSelectedWorker] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploadError, setUploadError] = useState(null);
+  const [exportMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    setUploadResult(null);
+    try {
+      const res = await api.importWorkersCsv(file);
+      setUploadResult(res);
+      if (res.created > 0 && onRefresh) {
+        onRefresh();
+      }
+    } catch (err) {
+      setUploadError(err.message || "Failed to upload CSV");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const byId = useMemo(
     () =>
@@ -50,11 +115,17 @@ function WorkerTable({
         const stats = byId[worker.id];
         const pct = stats?.attendance_pct ?? 0;
         const status = badge(pct);
+        const trend = trendIndicator(
+          stats?.trend_delta,
+          stats?.last_week_pct,
+          stats?.this_week_pct
+        );
 
         return {
           worker,
           pct,
           status,
+          trend,
           center: worker.center || "—",
         };
       }),
@@ -119,8 +190,31 @@ function WorkerTable({
           </p>
         </div>
 
-        <div className="text-xs text-cyan-300 font-medium">
-          {filteredRows.length} of {workers.length} Registered Workers
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-xs text-cyan-300 font-medium mr-1">
+            {filteredRows.length} of {workers.length} Registered Workers
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowImportModal(true);
+              setUploadResult(null);
+              setUploadError(null);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/[0.08] hover:border-white/30"
+          >
+            📥 Import CSV
+          </button>
+
+          <a
+            href={api.exportAttendanceCsvUrl(exportMonth, centerFilter)}
+            download
+            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20"
+            title="Download Monthly Attendance Matrix (Excel-friendly CSV)"
+          >
+            📊 Export Sheet
+          </a>
         </div>
       </div>
 
@@ -219,13 +313,14 @@ function WorkerTable({
               <th className="py-3 px-2">Name</th>
               <th className="py-3 px-2">Role</th>
               <th className="py-3 px-2">Center</th>
-              <th className="py-3 px-2">30 Days</th>
+              <th className="py-3 px-2">30 Days (WoW)</th>
               <th className="py-3 px-2">Status</th>
+              <th className="py-3 px-2">Timeline</th>
             </tr>
           </thead>
 
           <tbody>
-            {filteredRows.map(({ worker, pct, status, center }) => {
+            {filteredRows.map(({ worker, pct, status, trend, center }) => {
               return (
                 <tr
                   key={worker.id}
@@ -244,9 +339,21 @@ function WorkerTable({
                   </td>
 
                   <td className="py-3 px-2">
-                    <span className="font-semibold text-cyan-300">
-                      {pct}%
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-cyan-300">
+                        {pct}%
+                      </span>
+                      {trend && (
+                        <span
+                          title={trend.tooltip}
+                          aria-label={trend.ariaLabel}
+                          className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-medium border cursor-help ${trend.cls}`}
+                        >
+                          <span className="font-bold">{trend.arrow}</span>
+                          <span>{trend.text}</span>
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="py-3 px-2">
@@ -256,6 +363,16 @@ function WorkerTable({
                       {status.text}
                     </span>
                   </td>
+
+                  <td className="py-3 px-2 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWorker(worker)}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-white/5 border border-line hover:border-pulse/40 hover:text-pulse transition-colors cursor-pointer"
+                    >
+                      📊 Heatmap & Leave
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -263,7 +380,7 @@ function WorkerTable({
             {filteredRows.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="py-10 text-center text-white/40"
                 >
                   {workers.length === 0
@@ -275,6 +392,97 @@ function WorkerTable({
           </tbody>
         </table>
       </div>
+      {selectedWorker && (
+        <WorkerDetailModal
+          worker={selectedWorker}
+          onClose={() => setSelectedWorker(null)}
+          onLeaveApplied={onRefresh}
+        />
+      )}
+
+      {/* Bulk Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display font-semibold text-base text-white">
+                📥 Bulk Import Health Workers
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="text-white/40 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-white/60">
+              Upload a CSV file containing worker records (<code className="text-cyan-300">worker_code, name, role, center, phone</code>).
+            </p>
+
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-line text-xs">
+              <span className="text-white/70">Need a template?</span>
+              <a
+                href={api.sampleWorkersCsvUrl}
+                download
+                className="text-cyan-300 hover:text-cyan-200 font-medium underline flex items-center gap-1"
+              >
+                📄 Download Sample CSV
+              </a>
+            </div>
+
+            <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-line hover:border-cyan-400/50 rounded-xl cursor-pointer bg-white/[0.02] hover:bg-white/[0.05] transition">
+              <span className="text-2xl mb-1">📁</span>
+              <span className="text-xs text-white/80 font-medium">
+                {uploading ? "Importing workers..." : "Click or drag CSV file here"}
+              </span>
+              <span className="text-[10px] text-white/40 mt-1">Accepts standard .csv files</span>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+
+            {uploadResult && (
+              <div className="rounded-xl border border-pulse/30 bg-pulse/10 p-3 text-xs text-pulse space-y-1">
+                <div className="font-semibold">Import Succeeded:</div>
+                <div>✅ {uploadResult.created} workers created</div>
+                {uploadResult.skipped > 0 && <div>⚠️ {uploadResult.skipped} duplicate workers skipped</div>}
+                {uploadResult.errors?.length > 0 && (
+                  <div className="text-warn text-[11px] mt-1">
+                    Issues encountered:
+                    <ul className="list-disc pl-4 mt-0.5">
+                      {uploadResult.errors.map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
+                ❌ {uploadError}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-white px-4 py-2 text-xs font-semibold transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
