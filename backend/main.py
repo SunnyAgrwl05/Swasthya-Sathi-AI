@@ -639,7 +639,7 @@ def daily_broadcast(dispatch_sms: bool = False, db: Session = Depends(get_db)):
                 phone=w.phone,
                 notification_type="WhatsApp",
                 message=msg,
-                status="Sent"
+                status="Sent",
             )
         )
     db.commit()
