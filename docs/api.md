@@ -1,49 +1,34 @@
-# Swasthya Sathi AI - REST API Reference
+# Swasthya Sathi AI — REST API Documentation
 
-The Swasthya Sathi AI backend is built on **FastAPI** and provides automatic interactive documentation via Swagger UI and ReDoc:
+Comprehensive REST API reference for the Swasthya Sathi AI backend service (`http://localhost:8000`).
 
-* **Interactive Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-* **ReDoc Specification**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-* **OpenAPI JSON Schema**: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
+Interactive OpenAPI documentation is available locally at `http://localhost:8000/docs` (Swagger UI) or `http://localhost:8000/redoc` (ReDoc).
 
 ---
 
-## Base URL
+## Base URL & General Conventions
 
-| Environment | Base URL |
-|---|---|
-| Local Development | `http://localhost:8000` |
-| Production Backend | `https://swasthya-sathi-ai.onrender.com` |
+- **Local Base URL**: `http://localhost:8000`
+- **Content-Type**: `application/json`
+- **Cross-Origin Resource Sharing (CORS)**: Enabled for all origins (`*`) with credential support.
 
----
-
-## Summary of Endpoints
-
-| Category | Method | Endpoint | Description |
-|---|---|---|---|
-| **Health** | `GET` | `/` | Service health status and database connectivity |
-| **Workers** | `GET` | `/api/workers` | Retrieve all registered health workers |
-| | `POST` | `/api/workers` | Register a new health worker |
-| | `DELETE` | `/api/workers/{worker_id}` | Delete a health worker record |
-| **Attendance** | `GET` | `/api/attendance` | Query attendance records with optional filtering |
-| | `POST` | `/api/attendance` | Mark or update an attendance record |
-| **Analytics** | `GET` | `/api/analytics/summary` | Retrieve attendance aggregation and trends |
-| **AI Agent** | `POST` | `/api/chat` | Natural language chat with tool-calling operations agent |
-| **Reports** | `GET` | `/api/broadcast/daily` | Generate automated daily supervisor broadcast |
-| | `GET` | `/api/insights/weekly` | Generate weekly operational trends and AI insights (Hindi) |
-| | `POST` | `/api/insights/weekly` | Generate weekly insights with customizable language |
+### Common HTTP Status Codes
+| Status Code | Meaning | Description |
+| --- | --- | --- |
+| `200 OK` | Success | Request succeeded. |
+| `400 Bad Request` | Client Error | Invalid parameters or business constraint violation (e.g., duplicate `worker_code`). |
+| `404 Not Found` | Resource Missing | Entity ID does not exist in database. |
+| `422 Unprocessable Entity` | Validation Failed | Missing required fields or schema type mismatch. |
+| `500 Internal Error` | Server Error | Unhandled server or database exception. |
 
 ---
 
-## Endpoint Details
+## 1. System Health & Diagnostics
 
-### 1. Health Check
+### `GET /`
+Returns the operational health and database connectivity status.
 
-#### `GET /`
-Verifies backend service operational state and database connection.
-
-* **Response Status**: `200 OK`
-* **Response Body**:
+**Response `200 OK`:**
 ```json
 {
   "status": "ok",
@@ -54,207 +39,221 @@ Verifies backend service operational state and database connection.
 
 ---
 
-### 2. Health Workers
+## 2. Health Workers (`/api/workers`)
 
-#### `GET /api/workers`
-Returns the list of all registered healthcare workers across the primary healthcare network.
+### `GET /api/workers`
+Returns a list of all registered healthcare workers (ASHA, ANM, Anganwadi).
 
-* **Response Status**: `200 OK`
-* **Response Body**:
+**Response `200 OK`:**
 ```json
 [
   {
     "id": 1,
+    "worker_code": "ASHA-PAT-001",
     "name": "Sunita Devi",
-    "worker_code": "ASHA-001",
-    "role": "ASHA",
-    "phone": "+91 98765 43210",
-    "center": "PHC Danapur",
-    "is_active": true
-  },
-  {
-    "id": 2,
-    "name": "Poonam Kumari",
-    "worker_code": "ANM-002",
-    "role": "ANM",
-    "phone": "+91 98765 43211",
-    "center": "PHC Bihta",
-    "is_active": true
+    "role": "ASHA Worker",
+    "center": "Patna Sadar PHC",
+    "phone": "+919876543210"
   }
 ]
 ```
 
-#### `POST /api/workers`
-Registers a new worker (ASHA, ANM, Anganwadi, or Medical Officer).
+### `POST /api/workers`
+Registers a new healthcare worker in the system.
 
-* **Request Body** (`application/json`):
+**Request Body:**
 ```json
 {
-  "name": "Kavita Singh",
-  "worker_code": "ASHA-015",
-  "role": "ASHA",
-  "phone": "+91 98765 43225",
-  "center": "PHC Maner",
-  "is_active": true
+  "worker_code": "ANM-DAN-101",
+  "name": "Pooja Kumari",
+  "role": "ANM",
+  "center": "Danapur Sub-Center",
+  "phone": "+919812345678"
 }
 ```
-* **Response Status**: `200 OK` (or `400 Bad Request` if `worker_code` already exists)
 
-#### `DELETE /api/workers/{worker_id}`
-Deletes a worker record and associated attendance records.
+**Response `200 OK`:**
+```json
+{
+  "id": 2,
+  "worker_code": "ANM-DAN-101",
+  "name": "Pooja Kumari",
+  "role": "ANM",
+  "center": "Danapur Sub-Center",
+  "phone": "+919812345678"
+}
+```
 
-* **Parameters**: `worker_id` (integer, path parameter)
-* **Response Status**: `200 OK`
+**Errors:**
+- `400 Bad Request`: `{"detail": "Worker with this worker_code already exists"}`
+- `422 Unprocessable Entity`: Missing required fields (`worker_code`, `name`, `center`, `phone`).
+
+### `DELETE /api/workers/{worker_id}`
+Deletes a healthcare worker by their numeric ID.
+
+**Response `200 OK`:**
+```json
+{
+  "deleted": 2
+}
+```
+
+**Errors:**
+- `404 Not Found`: `{"detail": "Worker not found"}`
 
 ---
 
-### 3. Attendance Management
+## 3. Attendance Management (`/api/attendance`)
 
-#### `GET /api/attendance`
-Fetches attendance records with optional filtering.
+### `GET /api/attendance`
+Retrieves logged attendance records, ordered by date descending (up to 500 records).
 
-* **Query Parameters**:
-  * `worker_id` (optional, integer): Filter records for a specific worker ID.
-* **Response Status**: `200 OK`
-* **Response Body**:
+**Query Parameters:**
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `worker_id` | Integer | Optional | Filter attendance logs for a specific worker. |
+
+**Response `200 OK`:**
 ```json
 [
   {
     "id": 101,
     "worker_id": 1,
-    "date": "2026-11-14",
+    "date": "2026-11-17",
     "status": "present",
-    "notes": "Field vaccination drive",
-    "worker_name": "Sunita Devi",
-    "worker_role": "ASHA",
-    "worker_center": "PHC Danapur"
+    "note": "Field immunisation drive",
+    "marked_by": "manual"
   }
 ]
 ```
 
-#### `POST /api/attendance`
-Marks or updates attendance for a specific date and worker. If an entry exists for that worker and date, it updates the record; otherwise, a new record is created.
+### `POST /api/attendance`
+Creates or idempotently updates an attendance record for a worker on a given date. Automatically appends an entry to the `AuditLog`.
 
-* **Request Body** (`application/json`):
+**Request Body:**
 ```json
 {
   "worker_id": 1,
-  "date": "2026-11-14",
+  "date": "2026-11-17",
   "status": "present",
-  "notes": "Verified by PHC supervisor"
+  "note": "Village survey completed"
 }
 ```
-* **Valid Status Values**: `"present"`, `"absent"`, `"half-day"`, `"leave"`
-* **Response Status**: `200 OK`
+
+**Response `200 OK`:**
+```json
+{
+  "id": 101,
+  "worker_id": 1,
+  "date": "2026-11-17",
+  "status": "present",
+  "note": "Village survey completed",
+  "marked_by": "manual"
+}
+```
 
 ---
 
-### 4. Analytics Summary
+## 4. Analytics & Summaries (`/api/analytics`)
 
-#### `GET /api/analytics/summary`
-Calculates attendance percentages, roster counts, present/absent tallies, and identifies low-attendance workers.
+### `GET /api/analytics/summary`
+Calculates attendance statistics over a rolling window. Results are sorted lowest attendance percentage first to prioritize follow-up.
 
-* **Query Parameters**:
-  * `days` (optional, integer, default `30`): Lookback window in days.
-* **Response Status**: `200 OK`
-* **Response Body**:
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `days` | Integer | `30` | Number of past days to include in window. |
+
+**Response `200 OK`:**
 ```json
-{
-  "total_workers": 12,
-  "present_today": 10,
-  "absent_today": 2,
-  "attendance_rate_today": 83.3,
-  "average_monthly_rate": 87.5,
-  "low_attendance_workers": [
-    {
-      "worker_id": 4,
-      "name": "Manju Devi",
-      "role": "ASHA",
-      "attendance_rate": 62.5
-    }
-  ],
-  "role_breakdown": {
-    "ASHA": 7,
-    "ANM": 3,
-    "Anganwadi": 2
+[
+  {
+    "worker_id": 2,
+    "name": "Pooja Kumari",
+    "role": "ANM",
+    "center": "Danapur Sub-Center",
+    "present": 12,
+    "total_logged": 20,
+    "attendance_pct": 60.0
+  },
+  {
+    "worker_id": 1,
+    "name": "Sunita Devi",
+    "role": "ASHA Worker",
+    "center": "Patna Sadar PHC",
+    "present": 28,
+    "total_logged": 30,
+    "attendance_pct": 93.3
   }
-}
+]
 ```
 
 ---
 
-### 5. AI Operations Agent Chat
+## 5. AI Chat & Operations Agent (`/api/chat`)
 
-#### `POST /api/chat`
-Conversational endpoint powering the autonomous operations agent. The backend binds Python tools to the Gemini API (`gemini-2.5-flash`), allowing it to understand natural language in Hindi and English, execute appropriate tools, and return structured actions alongside natural text.
+### `POST /api/chat`
+Sends a supervisor prompt to the AI agent. The agent can execute backend tool actions (marking attendance, querying summaries, detecting low attendance) and records both `ChatLog` and `AgentLog`.
 
-* **Request Body** (`application/json`):
+**Request Body:**
 ```json
 {
-  "message": "Sunita Devi ko aaj present mark karo aur attendance summary batao"
+  "message": "Sunita Devi ko aaj present mark karo aur uska attendance percentage batao"
 }
 ```
-* **Response Status**: `200 OK`
-* **Response Body**:
+
+**Response `200 OK`:**
 ```json
 {
-  "reply": "सुनीता देवी (ASHA) की उपस्थिति आज 'present' दर्ज कर दी गई है। उनका पिछले 30 दिनों का उपस्थिति प्रतिशत 92% है।",
+  "reply": "Sunita Devi (ASHA-PAT-001) ki aaj (2026-11-17) ki upasthiti 'Present' mark kar di gayi hai. Pichhle 30 dino me unki attendance 93.3% hai.",
   "actions_taken": [
-    "mark_attendance(worker_name='Sunita Devi', status='present')",
-    "get_worker_attendance_summary(worker_name='Sunita Devi')"
-  ],
-  "language": "hi"
+    "mark_attendance(ASHA-PAT-001, present)"
+  ]
 }
 ```
 
 ---
 
-### 6. Operational Broadcasts & Insights
+## 6. Supervisor Broadcasts & Insights
 
-#### `GET /api/broadcast/daily`
-Generates a formatted daily summary notification suitable for messaging or field bulletin broadcast.
+### `GET /api/broadcast/daily`
+Generates a morning broadcast briefing for field workers and logs WhatsApp/SMS notifications in `NotificationLog`.
 
-* **Response Status**: `200 OK`
-* **Response Body**:
+**Response `200 OK`:**
 ```json
 {
-  "broadcast": "*Swasthya Sathi AI — Daily Update (14 Nov 2026)*\nPresent today: 10/12\nMissing today: Manju Devi, Rekha Sharma\nLow attendance (<75%): Manju Devi (62.5%)"
+  "message": "सुप्रभात स्वास्थ्य साथियों! आज का दिन मातृ एवं शिशु स्वास्थ्य जांच अभियान के लिए समर्पित है। कृपया समय पर रिपोर्ट करें।"
 }
 ```
 
-#### `GET /api/insights/weekly` / `POST /api/insights/weekly`
-Generates week-over-week analytical trends and strategic supervisor recommendations using the AI model.
+### `GET /api/insights/weekly`
+Returns an AI-synthesized weekly operational overview for supervisors.
 
-* **Request Body for POST** (`application/json`):
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `language` | String | `"hi"` | Language code (`"hi"` for Hindi, `"en"` for English). |
+
+**Response `200 OK`:**
 ```json
 {
-  "language": "hi"
+  "report": "साप्ताहिक सारांश: इस सप्ताह कुल औसत उपस्थिति 88.5% रही। 2 स्वास्थ्य कार्यकर्ताओं को अतिरिक्त सहायता की आवश्यकता है।"
 }
 ```
-* **Response Status**: `200 OK`
-* **Response Body**:
+
+### `POST /api/insights/weekly`
+Alternative POST endpoint for weekly insights.
+
+**Request Body:**
 ```json
 {
-  "insights": "### साप्ताहिक परिचालन समीक्षा\n- कुल 12 कार्यकर्ताओं में से 10 सक्रिय रहे।\n- पीएचसी दानापुर का समग्र प्रदर्शन 89% रहा।\n- अनुशंसा: कम उपस्थिति वाले कार्यकर्ताओं से संपर्क करें।"
+  "language": "en"
 }
 ```
 
----
-
-## Error Responses
-
-The API uses standard HTTP error codes:
-
-| HTTP Code | Meaning | Typical Scenario |
-|---|---|---|
-| `400 Bad Request` | Invalid input or duplicate key | Worker code already exists or invalid date format |
-| `404 Not Found` | Resource not found | Requested `worker_id` does not exist |
-| `422 Unprocessable Entity` | Schema validation error | Missing required fields or payload type mismatch |
-| `500 Internal Server Error` | Unhandled server exception | Database lock or unexpected provider error |
-
-Error response format:
+**Response `200 OK`:**
 ```json
 {
-  "detail": "Worker with this worker_code already exists"
+  "report": "Weekly Operations Summary: Overall workforce attendance is 88.5%. Danapur center recorded 100% compliance."
 }
 ```
