@@ -1,3 +1,4 @@
+import csv
 import datetime
 import json
 import time
@@ -80,6 +81,199 @@ def create_worker(worker: schemas.WorkerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_worker)
     return db_worker
+
+
+@app.get("/api/workers/export-csv")
+def export_workers_csv(
+    center: str | None = None,
+    role: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Export health worker roster as RFC-4180 compliant CSV."""
+    q = db.query(models.HealthWorker)
+    if center:
+        q = q.filter(models.HealthWorker.center == center)
+    if role:
+        q = q.filter(models.HealthWorker.role == role)
+
+    workers = q.order_by(models.HealthWorker.id.asc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(["Worker Code", "Name", "Role", "Center", "Phone"])
+
+    for w in workers:
+        writer.writerow([w.worker_code, w.name, w.role, w.center, w.phone])
+
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="workers_roster.csv"',
+            "Content-Type": "text/csv; charset=utf-8",
+        },
+    )
+
+
+@app.post("/api/workers/import-csv")
+async def import_workers_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Bulk import health workers from CSV file."""
+    raw_content = await file.read()
+    try:
+        text = raw_content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw_content.decode("latin-1")
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    header = [col.strip().lower().replace(" ", "_") for col in rows[0]]
+    col_map = {}
+    for idx, col in enumerate(header):
+        if col in ("worker_code", "code", "worker_id", "id"):
+            col_map["worker_code"] = idx
+        elif col in ("name", "worker_name", "full_name"):
+            col_map["name"] = idx
+        elif col in ("role", "designation"):
+            col_map["role"] = idx
+        elif col in ("center", "sub_center", "phc", "health_center", "location"):
+            col_map["center"] = idx
+        elif col in ("phone", "contact", "contact_number", "mobile"):
+            col_map["phone"] = idx
+
+    if "name" not in col_map or "center" not in col_map:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain at least 'name' and 'center' columns",
+        )
+
+    created_count = 0
+    updated_count = 0
+    errors = []
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if not row or not any(field.strip() for field in row):
+            continue
+        try:
+            name = row[col_map["name"]].strip()
+            center = row[col_map["center"]].strip()
+            if not name or not center:
+                errors.append(f"Row {row_idx}: Name and Center are required")
+                continue
+
+            role = (
+                row[col_map["role"]].strip()
+                if "role" in col_map and col_map["role"] < len(row)
+                else "ASHA Worker"
+            ) or "ASHA Worker"
+            phone = (
+                row[col_map["phone"]].strip()
+                if "phone" in col_map and col_map["phone"] < len(row)
+                else "N/A"
+            ) or "N/A"
+
+            code = (
+                row[col_map["worker_code"]].strip()
+                if "worker_code" in col_map and col_map["worker_code"] < len(row)
+                else ""
+            )
+
+            existing = None
+            if code:
+                existing = (
+                    db.query(models.HealthWorker)
+                    .filter_by(worker_code=code)
+                    .first()
+                )
+            if not existing:
+                existing = (
+                    db.query(models.HealthWorker)
+                    .filter_by(name=name, center=center)
+                    .first()
+                )
+
+            if existing:
+                existing.role = role
+                existing.phone = phone
+                updated_count += 1
+            else:
+                if not code:
+                    max_id = db.query(models.HealthWorker).count() + 1 + created_count
+                    code = f"HW{max_id:03d}"
+                new_worker = models.HealthWorker(
+                    worker_code=code,
+                    name=name,
+                    role=role,
+                    center=center,
+                    phone=phone,
+                )
+                db.add(new_worker)
+                created_count += 1
+        except Exception as e:
+            errors.append(f"Row {row_idx}: {str(e)}")
+
+    db.commit()
+    return {
+        "total_rows": len(rows) - 1,
+        "created": created_count,
+        "updated": updated_count,
+        "errors": errors,
+    }
+
+
+@app.get("/api/workers/{worker_id}", response_model=schemas.WorkerDetailOut)
+def get_worker(worker_id: int, db: Session = Depends(get_db)):
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    recent = (
+        db.query(models.AttendanceRecord)
+        .filter_by(worker_id=worker_id)
+        .order_by(models.AttendanceRecord.date.desc())
+        .limit(30)
+        .all()
+    )
+
+    return schemas.WorkerDetailOut(
+        id=worker.id,
+        worker_code=worker.worker_code,
+        name=worker.name,
+        role=worker.role,
+        center=worker.center,
+        phone=worker.phone,
+        total_attendance_records=len(worker.records),
+        recent_attendance=recent,
+    )
+
+
+@app.put("/api/workers/{worker_id}", response_model=schemas.WorkerOut)
+def update_worker(
+    worker_id: int,
+    worker_update: schemas.WorkerUpdate,
+    db: Session = Depends(get_db),
+):
+    worker = db.query(models.HealthWorker).filter_by(id=worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    if worker_update.name is not None:
+        worker.name = worker_update.name
+    if worker_update.role is not None:
+        worker.role = worker_update.role
+    if worker_update.center is not None:
+        worker.center = worker_update.center
+    if worker_update.phone is not None:
+        worker.phone = worker_update.phone
+
+    db.commit()
+    db.refresh(worker)
+    return worker
 
 
 @app.delete("/api/workers/{worker_id}")
@@ -221,6 +415,168 @@ def create_attendance(
     db.refresh(db_record)
 
     return db_record
+
+
+@app.get("/api/attendance/export-csv")
+@app.get("/api/reports/export-csv")
+def export_attendance_csv(
+    worker_id: int | None = None,
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+    status: str | None = None,
+    center: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Export attendance logs as RFC-4180 compliant CSV stream with optional filters."""
+    q = db.query(models.AttendanceRecord).join(models.HealthWorker)
+
+    if worker_id:
+        q = q.filter(models.AttendanceRecord.worker_id == worker_id)
+    if start_date:
+        q = q.filter(models.AttendanceRecord.date >= start_date)
+    if end_date:
+        q = q.filter(models.AttendanceRecord.date <= end_date)
+    if status:
+        q = q.filter(models.AttendanceRecord.status == status)
+    if center:
+        q = q.filter(models.HealthWorker.center == center)
+
+    records = q.order_by(models.AttendanceRecord.date.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow([
+        "Worker Code",
+        "Worker Name",
+        "Role",
+        "Health Center",
+        "Phone",
+        "Date",
+        "Status",
+        "Note",
+        "Marked By",
+    ])
+
+    for r in records:
+        w = r.worker
+        writer.writerow([
+            w.worker_code if w else "",
+            w.name if w else "",
+            w.role if w else "",
+            w.center if w else "",
+            w.phone if w else "",
+            r.date.isoformat(),
+            r.status,
+            r.note or "",
+            r.marked_by or "",
+        ])
+
+    csv_data = output.getvalue()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="swasthya_attendance_report.csv"',
+            "Content-Type": "text/csv; charset=utf-8",
+        },
+    )
+
+
+@app.post("/api/attendance/import-csv")
+async def import_attendance_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Bulk import attendance records from CSV file."""
+    raw_content = await file.read()
+    try:
+        text = raw_content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw_content.decode("latin-1")
+
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    header = [col.strip().lower().replace(" ", "_") for col in rows[0]]
+    col_map = {}
+    for idx, col in enumerate(header):
+        if col in ("worker_code", "code"):
+            col_map["worker_code"] = idx
+        elif col in ("worker_name", "name"):
+            col_map["name"] = idx
+        elif col in ("date", "attendance_date"):
+            col_map["date"] = idx
+        elif col in ("status", "attendance_status"):
+            col_map["status"] = idx
+        elif col in ("note", "remarks"):
+            col_map["note"] = idx
+        elif col in ("marked_by", "supervisor"):
+            col_map["marked_by"] = idx
+
+    if ("worker_code" not in col_map and "name" not in col_map) or "date" not in col_map or "status" not in col_map:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain 'worker_code' (or 'name'), 'date', and 'status'",
+        )
+
+    created_count = 0
+    errors = []
+
+    for row_idx, row in enumerate(rows[1:], start=2):
+        if not row or not any(field.strip() for field in row):
+            continue
+        try:
+            worker = None
+            if "worker_code" in col_map and col_map["worker_code"] < len(row):
+                w_code = row[col_map["worker_code"]].strip()
+                if w_code:
+                    worker = db.query(models.HealthWorker).filter_by(worker_code=w_code).first()
+            if not worker and "name" in col_map and col_map["name"] < len(row):
+                w_name = row[col_map["name"]].strip()
+                if w_name:
+                    worker = db.query(models.HealthWorker).filter_by(name=w_name).first()
+
+            if not worker:
+                errors.append(f"Row {row_idx}: Worker not found")
+                continue
+
+            date_str = row[col_map["date"]].strip()
+            record_date = datetime.date.fromisoformat(date_str)
+            status = row[col_map["status"]].strip().lower()
+            note = row[col_map["note"]].strip() if "note" in col_map and col_map["note"] < len(row) else None
+            marked_by = row[col_map["marked_by"]].strip() if "marked_by" in col_map and col_map["marked_by"] < len(row) else "Bulk Import"
+
+            existing = (
+                db.query(models.AttendanceRecord)
+                .filter_by(worker_id=worker.id, date=record_date)
+                .first()
+            )
+            if existing:
+                existing.status = status
+                if note:
+                    existing.note = note
+                existing.marked_by = marked_by
+            else:
+                db_record = models.AttendanceRecord(
+                    worker_id=worker.id,
+                    date=record_date,
+                    status=status,
+                    note=note,
+                    marked_by=marked_by,
+                )
+                db.add(db_record)
+            created_count += 1
+        except Exception as e:
+            errors.append(f"Row {row_idx}: {str(e)}")
+
+    db.commit()
+    return {
+        "total_rows": len(rows) - 1,
+        "processed": created_count,
+        "errors": errors,
+    }
 
 
 # =====================================================

@@ -34,6 +34,25 @@ export const api = {
             language,
         }),
     }),
+  getWorker: (id) => req(`/api/workers/${id}`),
+  updateWorker: (id, data) =>
+    req(`/api/workers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  exportAttendanceCSVUrl: (filters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.worker_id) params.append('worker_id', filters.worker_id)
+    if (filters.status && filters.status !== 'All') params.append('status', filters.status.toLowerCase())
+    if (filters.center && filters.center !== 'All') params.append('center', filters.center)
+    const qs = params.toString()
+    return `${BASE}/api/attendance/export-csv${qs ? `?${qs}` : ''}`
+  },
+  exportWorkersCSVUrl: (filters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.center && filters.center !== 'All') params.append('center', filters.center)
+    if (filters.role && filters.role !== 'All') params.append('role', filters.role)
+    const qs = params.toString()
+    return `${BASE}/api/workers/export-csv${qs ? `?${qs}` : ''}`
+  },
+  importWorkersCSV: async (file) => {
   getWorkerAttendanceHistory: (workerId, days = 30) =>
     req(`/api/workers/${workerId}/attendance-history?days=${days}`),
   applyLeave: (payload) =>
@@ -63,6 +82,19 @@ export const api = {
       method: 'POST',
       body: formData,
     })
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+    return res.json()
+  },
+  importAttendanceCSV: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/api/attendance/import-csv`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+    return res.json()
+  },
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       throw new Error(err.detail || `API error ${res.status}`)
