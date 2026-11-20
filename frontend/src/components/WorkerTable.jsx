@@ -392,6 +392,7 @@ function WorkerTable({
           </tbody>
         </table>
       </div>
+
       {selectedWorker && (
         <WorkerDetailModal
           worker={selectedWorker}
