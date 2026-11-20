@@ -74,6 +74,18 @@ def gemini_generate(prompt, system_instruction=None, tools=None):
 
     raise Exception(f"All Gemini API Keys and models failed: {last_error}")
 
+# _actions_context tracks actions executed by tools within a request context,
+# isolating actions per async task / thread to prevent concurrent request race conditions.
+_actions_context: contextvars.ContextVar[list[str]] = contextvars.ContextVar(
+    "_actions_context", default=[]
+)
+
+
+def record_action(action: str):
+    """Records an executed tool action in the current request context."""
+    current = list(_actions_context.get())
+    current.append(action)
+    _actions_context.set(current)
 # actions_taken is filled by tools during a single chat turn so the API
 # response can show the user a small audit trail of what the agent did.
 # Using ContextVar ensures thread-safety under concurrent async FastAPI workers.
@@ -1166,6 +1178,7 @@ def _dispatch_local_attendance_tool(user_message: str) -> tuple[str, list[str]] 
         )
         return report, list(_actions_taken)
 
+    _actions_context.set([])
     # 3. Mark / Record Attendance Mutation
     if "mark" in msg_lower or "present" in msg_lower or "absent" in msg_lower or "leave" in msg_lower:
         status = None
@@ -1271,6 +1284,12 @@ def _dispatch_local_attendance_tool(user_message: str) -> tuple[str, list[str]] 
 
 # ---------------------- CHAT AGENT ----------------------
 
+                executed_actions = list(_actions_context.get())
+
+                # If Gemini returned no text but a tool executed,
+                # show executed actions.
+                if not tool_output and executed_actions:
+                    tool_output = "\n".join(executed_actions)
 def classify_attendance_intent(user_message: str) -> tuple[str | None, dict]:
     """
     Classify user message into an attendance operational intent with extracted parameters.
@@ -1400,6 +1419,15 @@ def execute_attendance_intent(intent: str, params: dict) -> tuple[str, list[str]
 
     return "No matching operations tool found.", []
 
+                print("\n====================================")
+                print("USING KEY:", key[:10] + "...")
+                print("USER:", user_message)
+                print("RESPONSE:")
+                print(tool_output)
+                print("ACTIONS:", executed_actions)
+                print("====================================\n")
+
+                return tool_output, executed_actions
 
 # ---------------------- CHAT AGENT ----------------------
 
@@ -1520,4 +1548,11 @@ Please try again after a few seconds.""",
             )
     finally:
         _actions_taken_var.reset(token)
+
+
+def __getattr__(name: str):
+    """Provides backward compatibility for direct access to `_actions_taken`."""
+    if name == "_actions_taken":
+        return list(_actions_context.get())
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

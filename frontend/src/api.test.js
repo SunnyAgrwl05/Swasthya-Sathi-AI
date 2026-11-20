@@ -60,7 +60,7 @@ describe("api service", () => {
     expect(global.fetch).toHaveBeenCalledWith("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Mark Anita present" }),
+      body: JSON.stringify({ message: "Mark Anita present", context: null }),
     });
     expect(result).toEqual(mockReply);
   });
