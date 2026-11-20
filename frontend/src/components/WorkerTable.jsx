@@ -114,6 +114,10 @@ function WorkerTable({
       workers.map((worker) => {
         const stats = byId[worker.id];
         const pct = stats?.attendance_pct ?? 0;
+        const trend = stats?.trend ?? "flat";
+        const changePct = stats?.change_pct ?? 0;
+        const thisWeekPct = stats?.this_week_pct;
+        const lastWeekPct = stats?.last_week_pct;
         const status = badge(pct);
         const trend = trendIndicator(
           stats?.trend_delta,
@@ -124,6 +128,10 @@ function WorkerTable({
         return {
           worker,
           pct,
+          trend,
+          changePct,
+          thisWeekPct,
+          lastWeekPct,
           status,
           trend,
           center: worker.center || "—",
@@ -354,6 +362,38 @@ function WorkerTable({
                   </td>
 
                   <td className="py-3 px-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-cyan-300">
+                        {pct}%
+                      </span>
+                      {trend === "up" && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-xs text-emerald-400 font-medium cursor-help"
+                          title={`Week-over-week: +${changePct}% (Last week: ${lastWeekPct ?? 0}% → This week: ${thisWeekPct ?? 0}%)`}
+                          aria-label={`Performance increased by ${changePct}%`}
+                        >
+                          <span aria-hidden="true">↑</span>
+                          <span className="text-[10px] font-mono">+{changePct}%</span>
+                        </span>
+                      )}
+                      {trend === "down" && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-xs text-rose-400 font-medium cursor-help"
+                          title={`Week-over-week: ${changePct}% (Last week: ${lastWeekPct ?? 0}% → This week: ${thisWeekPct ?? 0}%)`}
+                          aria-label={`Performance decreased by ${Math.abs(changePct)}%`}
+                        >
+                          <span aria-hidden="true">↓</span>
+                          <span className="text-[10px] font-mono">{changePct}%</span>
+                        </span>
+                      )}
+                      {trend === "flat" && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-xs text-white/40 font-medium cursor-help"
+                          title="Week-over-week: stable (no change)"
+                          aria-label="Performance stable"
+                        >
+                          <span aria-hidden="true">—</span>
+                          <span className="text-[10px] font-mono">0%</span>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-cyan-300">
                         {pct}%
@@ -407,6 +447,7 @@ function WorkerTable({
           </tbody>
         </table>
       </div>
+
       {selectedWorker && (
         <WorkerDetailModal
           worker={selectedWorker}

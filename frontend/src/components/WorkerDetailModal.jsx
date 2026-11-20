@@ -45,6 +45,11 @@ export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
     } finally {
       setLoading(false);
     }
+  }, [worker?.id]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
   }, [workerId]);
 
   const loadLeaves = useCallback(async () => {
@@ -80,6 +85,9 @@ export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
         leave_type: leaveType,
         reason: reason || undefined,
       });
+      setLeaveSuccess(`✓ Approved ${res.leave_type} leave from ${res.start_date} to ${res.end_date}`);
+      setReason("");
+      await loadHistory();
       setLeaveSuccess(`✓ Submitted ${res.leave_type} leave (${res.start_date} to ${res.end_date})`);
       setReason("");
       await Promise.all([loadHistory(), loadLeaves()]);
@@ -239,6 +247,25 @@ export default function WorkerDetailModal({ worker, onClose, onLeaveApplied }) {
             </div>
           ) : history?.days ? (
             <div>
+              {/* Heatmap Grid */}
+              <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5 p-3 rounded-xl bg-slate-950/60 border border-white/5">
+                {history.days.map((d) => (
+                  <div
+                    key={d.date}
+                    title={`${d.date}: ${d.status.toUpperCase()}${d.note ? ` - ${d.note}` : ""}`}
+                    className={`h-9 rounded-lg border text-[10px] flex flex-col items-center justify-center font-mono cursor-help transition-transform hover:scale-110 shadow-sm ${tileColor(
+                      d.status
+                    )}`}
+                  >
+                    <span className="font-semibold leading-none">{d.date.slice(8)}</span>
+                    <span className="text-[8px] opacity-75 capitalize leading-none mt-0.5">
+                      {d.status === "half-day" ? "half" : d.status.slice(0, 4)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Legend */}
               {/* GitHub Commit Graph SVG Representation */}
               {viewMode === "graph" ? (
                 <div className="p-4 rounded-xl bg-slate-950/80 border border-white/5 overflow-x-auto">

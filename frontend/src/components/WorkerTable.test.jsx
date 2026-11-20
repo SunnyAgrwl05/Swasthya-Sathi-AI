@@ -87,6 +87,14 @@ describe("WorkerTable", () => {
   });
 
   it("renders week-over-week trend arrows and tooltips", () => {
+    const trendSummary = [
+      {
+        worker_id: 1,
+        attendance_pct: 92,
+        trend: "up",
+        change_pct: 12.5,
+        this_week_pct: 95.0,
+        last_week_pct: 82.5,
     const summaryWithTrends = [
       {
         worker_id: 1,
