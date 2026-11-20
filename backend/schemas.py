@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class WorkerCreate(BaseModel):
@@ -9,6 +9,13 @@ class WorkerCreate(BaseModel):
     role: str = "ASHA Worker"
     center: str
     phone: str
+
+
+class WorkerImportSummary(BaseModel):
+    total_rows: int
+    created: int
+    skipped: int
+    errors: list[str] = []
 
 
 class WorkerOut(WorkerCreate):
@@ -54,6 +61,23 @@ class HallucinationCheckOut(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     actions_taken: list[str] = []
+    safety_warning: str | None = None
+    is_flagged: bool = False
+    confidence_score: float | None = None
+
+
+class SafetyVerificationRequest(BaseModel):
+    response_text: str
+    query: str | None = ""
+
+
+class SafetyVerificationResponse(BaseModel):
+    confidence_score: float
+    risk_level: str
+    is_flagged: bool
+    warning_message: str | None = None
+    flagged_reasons: list[str] = []
+    grounded_terms: list[str] = []
     hallucination_check: HallucinationCheckOut | None = None
 
 
@@ -88,6 +112,19 @@ class LeaveOut(BaseModel):
         from_attributes = True
 
 
+class NotificationLogOut(BaseModel):
+    id: int
+    worker_name: str
+    phone: str | None = None
+    notification_type: str
+    message: str
+    status: str
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class AttendanceHistoryDay(BaseModel):
     date: date
     status: str
@@ -107,6 +144,51 @@ class WorkerAttendanceHistoryOut(BaseModel):
     absent_days: int
     leave_days: int
     attendance_pct: float
+
+
+class SMSDispatchRequest(BaseModel):
+    message: str | None = None
+    worker_id: int | None = None
+    target: str = "all"  # "all", "pending", "worker"
+
+
+class SMSDispatchSummaryOut(BaseModel):
+    status: str
+    total_recipients: int
+    sent: int
+    failed: int
+    channel: str = "SMS"
+    errors: list[str] = []
+
+
+class LeaveStatusUpdate(BaseModel):
+    status: str  # "Approved", "Rejected", "Pending"
+    approved_by: str = "Supervisor"
+
+
+class SMSQueueItemOut(BaseModel):
+    id: int
+    worker_name: str
+    phone: str
+    message: str
+    status: str
+    attempts: int
+    max_retries: int
+    retry_interval_seconds: int
+    next_retry_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class SMSQueueProcessSummary(BaseModel):
+    processed: int
+    sent: int
+    retrying: int
+    failed: int
 
 
 
