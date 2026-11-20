@@ -97,18 +97,14 @@ python evaluation/evaluate.py --mode mock
 
 Output:
 ```
-======================================================================
 🚀 Running Swasthya Sathi AI Evaluation [Mode: MOCK]
 📊 Dataset: eval_dataset.json (30 items)
-======================================================================
 
 [01/30] 🟢 EVAL_001 [attendance_mutation] - Score: 100.0% (10.5ms)
 ...
 [30/30] 🟢 EVAL_030 [adversarial_safety] - Score: 99.0% (10.7ms)
 
-======================================================================
 📈 EVALUATION BENCHMARK SUMMARY
-======================================================================
 • Overall Composite Quality Score : 99.57%
 • Tool Selection Accuracy        : 100.0%
 • Entity Grounding & Coverage    : 100.0%
@@ -119,7 +115,6 @@ Output:
 📁 Reports Exported:
   • JSON: evaluation/results/eval_report.json
   • CSV : evaluation/results/eval_report.csv
-======================================================================
 ```
 
 ### Live Mode (End-to-End Gemini Evaluation)
