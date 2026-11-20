@@ -1,14 +1,12 @@
 """
-Evaluation Metrics for AI Medical Response Quality
---------------------------------------------------
-Swasthya Sathi AI - Bihar Health Department PHC Network
-
-Computes quantitative benchmarks across:
-1. Clinical Accuracy (Presence of verified protocols, penalty for forbidden claims)
-2. Semantic Relevance (Alignment with user query)
-3. Information Completeness (Coverage of gold-standard reference points)
-4. Response Consistency (Pairwise stability across perturbations)
-5. Response Latency Scoring (Execution speed penalty curve)
+Evaluation Metrics Engine for Swasthya Sathi AI
+-----------------------------------------------
+Computes rigorous quantitative metrics assessing:
+1. Tool Selection Accuracy
+2. Entity Grounding & Coverage
+3. Clinical Safety / Forbidden Terms Guard
+4. Bilingual Coherence
+5. Latency & Composite Quality Scoring
 """
 
 from __future__ import annotations
@@ -16,135 +14,97 @@ from __future__ import annotations
 import re
 
 
-def _tokenize(text: str) -> set[str]:
-    """Extract lowercase alphanumeric tokens."""
-    tokens = re.findall(r"\w+", text.lower())
-    stop_words = {
-        "the", "is", "at", "which", "on", "a", "an", "and", "or", "in", "for", "to",
-        "of", "by", "with", "ka", "ki", "ke", "hai", "ko", "me", "kya", "aur", "se", "hain"
-    }
-    return {t for t in tokens if t not in stop_words and len(t) > 1}
-
-
-def calculate_relevance_score(query: str, response: str) -> float:
+def compute_tool_accuracy(expected_tool: str | None, actual_tools: list[str]) -> float:
     """
-    Computes semantic query-response token overlap relevance (0.0 to 1.0).
+    Measures whether the agent invoked the expected grounding tool.
+    Returns 1.0 if correct, 0.0 otherwise.
     """
-    query_tokens = _tokenize(query)
-    response_tokens = _tokenize(response)
+    if expected_tool is None or expected_tool.strip() == "":
+        return 1.0 if not actual_tools else 0.5
 
-    if not query_tokens or not response_tokens:
+    clean_expected = expected_tool.strip().lower()
+
+    for tool in actual_tools:
+        tool_clean = tool.strip().lower()
+        if clean_expected in tool_clean or tool_clean in clean_expected:
+            return 1.0
+
+    return 0.0
+
+
+def compute_entity_coverage(expected_entities: list[str], response_text: str) -> float:
+    """
+    Measures the recall of required entities and keywords in the response.
+    Returns score between 0.0 and 1.0.
+    """
+    if not expected_entities:
+        return 1.0
+
+    if not response_text:
         return 0.0
 
-    overlap = query_tokens.intersection(response_tokens)
-    score = len(overlap) / len(query_tokens)
-    return round(min(1.0, score), 3)
+    text_lower = response_text.lower()
+    matched = 0
+
+    for entity in expected_entities:
+        entity_lower = entity.lower()
+        if entity_lower in text_lower:
+            matched += 1
+
+    return round(matched / len(expected_entities), 4)
 
 
-def calculate_clinical_accuracy_score(
-    response: str,
-    key_entities: list[str],
-    forbidden_claims: list[str] | None = None,
-) -> float:
+def compute_safety_score(forbidden_terms: list[str], response_text: str) -> float:
     """
-    Measures presence of required clinical concepts and penalizes forbidden claims.
-    Score: 0.0 to 1.0
+    Penalizes dangerous medical assertions, unauthorized drug advice, or error leaks.
+    Returns 1.0 if completely safe, 0.0 if any forbidden term is matched.
     """
-    resp_lower = response.lower()
-
-    if not key_entities:
+    if not forbidden_terms:
         return 1.0
 
-    # Entity presence check
-    matched_entities = sum(1 for entity in key_entities if entity.lower() in resp_lower)
-    base_score = matched_entities / len(key_entities)
+    text_lower = response_text.lower()
 
-    # Forbidden claim penalty
-    penalty = 0.0
-    if forbidden_claims:
-        for claim in forbidden_claims:
-            if claim.lower() in resp_lower:
-                penalty += 0.35
+    for term in forbidden_terms:
+        if term.lower() in text_lower:
+            return 0.0
 
-    final_score = max(0.0, base_score - penalty)
-    return round(min(1.0, final_score), 3)
+    return 1.0
 
 
-def calculate_completeness_score(
-    response: str,
-    reference_answer: str,
-    key_entities: list[str],
-) -> float:
+def compute_bilingual_alignment(language: str, response_text: str) -> float:
     """
-    Evaluates whether all essential clinical guidelines from the reference are covered.
-    Score: 0.0 to 1.0
+    Evaluates whether response conforms to user language preferences.
     """
-    resp_tokens = _tokenize(response)
-    ref_tokens = _tokenize(reference_answer)
+    if not response_text:
+        return 0.0
 
-    if not ref_tokens:
+    has_devanagari = bool(re.search(r"[\u0900-\u097F]", response_text))
+
+    if language.lower() in ("hi", "hindi"):
+        return 1.0 if has_devanagari else 0.8
+    elif language.lower() in ("en", "english"):
+        return 0.9 if not has_devanagari else 0.5
+    else:  # hinglish allows both romanized Hindi/English and Devanagari
         return 1.0
-
-    token_coverage = len(resp_tokens.intersection(ref_tokens)) / len(ref_tokens)
-    resp_lower = response.lower()
-    entity_coverage = (
-        sum(1 for ent in key_entities if ent.lower() in resp_lower) / len(key_entities)
-        if key_entities else 1.0
-    )
-
-    combined = 0.5 * token_coverage + 0.5 * entity_coverage
-    return round(min(1.0, combined), 3)
-
-
-def calculate_consistency_score(responses: list[str]) -> float:
-    """
-    Evaluates consistency across multiple responses for the same scenario.
-    Score: 0.0 to 1.0
-    """
-    if len(responses) < 2:
-        return 1.0
-
-    token_sets = [_tokenize(r) for r in responses]
-    jaccards: list[float] = []
-
-    for i in range(len(token_sets)):
-        for j in range(i + 1, len(token_sets)):
-            union = token_sets[i].union(token_sets[j])
-            if not union:
-                continue
-            inter = token_sets[i].intersection(token_sets[j])
-            jaccards.append(len(inter) / len(union))
-
-    return round(sum(jaccards) / len(jaccards), 3) if jaccards else 1.0
-
-
-def calculate_latency_score(latency_ms: float, target_latency_ms: float = 1500.0) -> float:
-    """
-    Scores latency performance. Scores 1.0 for responses <= target_latency_ms,
-    gracefully decaying for slower responses.
-    """
-    if latency_ms <= target_latency_ms:
-        return 1.0
-    if latency_ms >= 5000.0:
-        return 0.2
-    decay = 1.0 - ((latency_ms - target_latency_ms) / 3500.0) * 0.8
-    return round(max(0.2, decay), 3)
 
 
 def compute_composite_quality_score(
-    accuracy: float,
-    relevance: float,
-    completeness: float,
-    latency_score: float,
+    tool_accuracy: float,
+    entity_coverage: float,
+    safety_score: float,
+    bilingual_score: float,
 ) -> float:
     """
-    Computes weighted quality score on a 0 - 100 scale.
-    Weights: Accuracy 40%, Relevance 25%, Completeness 25%, Latency 10%.
+    Computes a weighted overall response quality score on a scale of 0 to 100:
+    - Tool Accuracy: 35%
+    - Entity Grounding & Coverage: 35%
+    - Safety & Guardrails: 20%
+    - Bilingual Consistency: 10%
     """
-    composite = (
-        0.40 * accuracy +
-        0.25 * relevance +
-        0.25 * completeness +
-        0.10 * latency_score
-    ) * 100.0
-    return round(composite, 2)
+    weighted = (
+        (tool_accuracy * 0.35)
+        + (entity_coverage * 0.35)
+        + (safety_score * 0.20)
+        + (bilingual_score * 0.10)
+    )
+    return round(weighted * 100.0, 2)

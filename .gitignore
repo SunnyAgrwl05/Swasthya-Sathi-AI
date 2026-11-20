@@ -23,5 +23,4 @@ frontend/coverage/
 .pytest_cache/
 
 # OS
-.DS_Store
-* 2.*
+.DS_Store.coverage
