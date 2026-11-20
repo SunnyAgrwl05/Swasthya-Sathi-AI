@@ -1262,41 +1262,46 @@ def chat_with_agent(user_message: str) -> tuple[str, list[str]]:
         except Exception as e:
             print(f"[OpenRouter Error] {e}")
 
-    # Local fallback intent parser and tool execution when API keys are missing or API fails locally
-    msg_lower = user_message.lower()
-    try:
-        if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
-            res = who_has_not_marked_today()
-            return res, ["Executed who_has_not_marked_today tool"]
-        elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
-            res = find_low_attendance_workers()
-            return res, ["Executed find_low_attendance_workers tool"]
-        elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
-            res = generate_daily_broadcast()
-            return res, ["Executed generate_daily_broadcast tool"]
-        elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
-            res = generate_weekly_insights()
-            return res, ["Executed generate_weekly_insights tool"]
-        elif "list" in msg_lower or "worker" in msg_lower:
-            res = list_workers()
-            return res, ["Executed list_workers tool"]
-        elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
-            res = get_attendance_summary()
-            return res, ["Executed get_attendance_summary tool"]
-    except Exception as fallback_err:
-        print(f"[Local Tool Fallback Error] {fallback_err}")
+        except Exception as e:
+            print(f"[Gemini Error] {e}")
 
-    # 4. Final friendly assistance message
-    return (
-        """👋 I am Swasthya Sathi AI, your Health Operations Assistant for Bihar PHC.
+        # Local fallback intent parser and tool execution when API keys are missing or API fails locally
+        msg_lower = user_message.lower()
+        try:
+            if "who" in msg_lower and ("mark" in msg_lower or "today" in msg_lower or "pending" in msg_lower):
+                res = who_has_not_marked_today()
+                return res, ["Executed who_has_not_marked_today tool"]
+            elif "low" in msg_lower or "attention" in msg_lower or "risk" in msg_lower or "below" in msg_lower:
+                res = find_low_attendance_workers()
+                return res, ["Executed find_low_attendance_workers tool"]
+            elif "broadcast" in msg_lower or "whatsapp" in msg_lower or "update" in msg_lower:
+                res = generate_daily_broadcast()
+                return res, ["Executed generate_daily_broadcast tool"]
+            elif "insight" in msg_lower or "trend" in msg_lower or "weekly" in msg_lower:
+                res = generate_weekly_insights()
+                return res, ["Executed generate_weekly_insights tool"]
+            elif "list" in msg_lower or "worker" in msg_lower:
+                res = list_workers()
+                return res, ["Executed list_workers tool"]
+            elif "mark" in msg_lower or "attendance" in msg_lower or "summary" in msg_lower:
+                res = get_attendance_summary()
+                return res, ["Executed get_attendance_summary tool"]
+        except Exception as fallback_err:
+            print(f"[Local Tool Fallback Error] {fallback_err}")
 
-I can help you with:
-• Marking worker attendance (e.g. 'Sunny Kumar ko present mark karo')
-• Checking low attendance (e.g. 'Is month sabse kam attendance kiski hai?')
-• Finding pending attendance (e.g. 'Aaj kisne attendance nahi mark ki?')
-• Generating daily broadcasts and weekly insights reports.
+        try:
+            raw_reply = call_openrouter(user_message)
+            return raw_reply, []
 
-Please ask an attendance or operations question!""",
-        [],
-    )
+        except Exception as e:
+            print(f"[OpenRouter Error] {e}")
+
+            return (
+                """❌ AI Operations Agent is currently unavailable.
+
+Please try again after a few seconds.""",
+                [],
+            )
+    finally:
+        _actions_taken_var.reset(token)
 
