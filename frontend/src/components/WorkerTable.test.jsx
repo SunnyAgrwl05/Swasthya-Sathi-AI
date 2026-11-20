@@ -95,6 +95,13 @@ describe("WorkerTable", () => {
         change_pct: 12.5,
         this_week_pct: 95.0,
         last_week_pct: 82.5,
+    const summaryWithTrends = [
+      {
+        worker_id: 1,
+        attendance_pct: 92,
+        trend_delta: 5.5,
+        this_week_pct: 95.0,
+        last_week_pct: 89.5,
       },
       {
         worker_id: 2,
@@ -110,5 +117,60 @@ describe("WorkerTable", () => {
 
     expect(screen.getByLabelText("Trending up by 12.5%")).toBeInTheDocument();
     expect(screen.getByLabelText("Trending down by -16.7%")).toBeInTheDocument();
+        trend_delta: -10.0,
+        this_week_pct: 50.0,
+        last_week_pct: 60.0,
+      },
+      {
+        worker_id: 3,
+        attendance_pct: 68,
+        trend_delta: 0,
+        this_week_pct: 70.0,
+        last_week_pct: 70.0,
+      },
+    ];
+
+    render(<WorkerTable workers={workers} summary={summaryWithTrends} />);
+
+    // Check header
+    expect(screen.getByText("30 Days (WoW)")).toBeInTheDocument();
+
+    // Check upward trend for worker 1
+    const upBadge = screen.getByLabelText("Increased by 5.5% week-over-week");
+    expect(upBadge).toBeInTheDocument();
+    expect(upBadge).toHaveAttribute("title", "Week-over-week: 89.5% → 95% (+5.5%)");
+
+    // Check downward trend for worker 2
+    const downBadge = screen.getByLabelText("Decreased by 10% week-over-week");
+    expect(downBadge).toBeInTheDocument();
+    expect(downBadge).toHaveAttribute("title", "Week-over-week: 60% → 50% (-10%)");
+
+    // Check neutral trend for worker 3
+    const neutralBadge = screen.getByLabelText("Unchanged week-over-week");
+    expect(neutralBadge).toBeInTheDocument();
+    expect(neutralBadge).toHaveAttribute("title", "Week-over-week: unchanged (70%)");
+  });
+
+  it("renders Import CSV and Export Sheet actions", () => {
+    render(<WorkerTable workers={workers} summary={summary} />);
+
+    const importBtn = screen.getByRole("button", { name: /import csv/i });
+    const exportBtn = screen.getByRole("link", { name: /export sheet/i });
+
+    expect(importBtn).toBeInTheDocument();
+    expect(exportBtn).toBeInTheDocument();
+    expect(exportBtn).toHaveAttribute("download");
+  });
+
+  it("opens import modal with sample CSV template download link", () => {
+    render(<WorkerTable workers={workers} summary={summary} />);
+
+    const importBtn = screen.getByRole("button", { name: /import csv/i });
+    fireEvent.click(importBtn);
+
+    expect(screen.getByText("📥 Bulk Import Health Workers")).toBeInTheDocument();
+    const downloadSample = screen.getByRole("link", { name: /download sample csv/i });
+    expect(downloadSample).toBeInTheDocument();
+    expect(downloadSample).toHaveAttribute("href", "/api/workers/sample-csv");
   });
 });

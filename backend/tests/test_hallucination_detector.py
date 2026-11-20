@@ -1,8 +1,21 @@
-"""Unit tests for the hallucination detection module."""
+"""
+Tests for hallucination_detector.py – Issue #14.
 
-import pytest
+Covers:
+  - Clean NHM-grounded responses → not flagged
+  - Unauthorized prescription/procedure → HIGH risk, flagged
+  - Dangerous protocol contradiction → flagged
+  - Operational / administrative queries → LOW risk
+  - Empty response → HIGH risk
+  - POST /api/safety/verify via TestClient
+"""
+
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from hallucination_detector import (
-    DetectionResult,
     HallucinationDetectorConfig,
     MedicalHallucinationDetector,
     detect_hallucination,

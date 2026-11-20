@@ -1,9 +1,21 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import ChatAgent from "./ChatAgent";
-import { api } from "../api";
-import { generateAttendancePDF } from "../utils/pdfExport";
+/**
+ * ChatAgent.test.jsx
+ *
+ * Tests the ChatAgent component:
+ * - Welcome screen is shown before first message
+ * - User message is appended and input cleared on submit
+ * - Agent reply is rendered after api.sendChat resolves
+ * - Error state renders a fallback message when api.sendChat rejects
+ * - Action badge chips are rendered when actions_taken is non-empty
+ * - Loading spinner is shown while request is in-flight
+ * - Suggestion buttons trigger a send with correct text
+ */
 
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { vi } from "vitest";
+import ChatAgent from "./ChatAgent";
+
+// Mock the api module so we never hit a real backend
 vi.mock("../api", () => ({
   api: {
     sendChat: vi.fn(),
@@ -123,5 +135,93 @@ describe("ChatAgent Component", () => {
     fireEvent.click(sendBtn);
 
     expect(api.sendChat).not.toHaveBeenCalled();
+  });
+
+  it("renders verified guidance chip and expands safety breakdown on click", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "ORS and Zinc solution is the standard IMNCI protocol for acute diarrhea.",
+      actions_taken: [],
+      language: "en",
+      hallucination_check: {
+        is_flagged: false,
+        confidence_score: 0.94,
+        risk_level: "LOW",
+        flagged_reasons: [],
+        warning_message: null,
+      },
+    });
+
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    fireEvent.change(input, { target: { value: "ORS diarrhea protocol" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Verified Guidance/i)).toBeInTheDocument();
+      expect(screen.getByText("94%")).toBeInTheDocument();
+    });
+
+    // Click chip to toggle clinical safety breakdown drawer
+    const chip = screen.getByRole("button", { name: /verified guidance/i });
+    fireEvent.click(chip);
+
+    expect(screen.getByText("Clinical Safety Breakdown")).toBeInTheDocument();
+    expect(screen.getByText("MoHFW Bihar / IMNCI")).toBeInTheDocument();
+    expect(screen.getByText(/Mandatory Clinical Notice/i)).toBeInTheDocument();
+  });
+
+  it("renders warning banner and flagged badge for high-risk responses", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "Administer high dose medication immediately.",
+      actions_taken: [],
+      language: "en",
+      hallucination_check: {
+        is_flagged: true,
+        confidence_score: 0.58,
+        risk_level: "HIGH",
+        flagged_reasons: ["Critical dosage instruction without physician consultation"],
+        warning_message: "Requires physician authorization.",
+      },
+    });
+
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    fireEvent.change(input, { target: { value: "Administer drug" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Requires verification by PHC Medical Officer/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Flagged for Clinical Review/i)).toBeInTheDocument();
+      expect(screen.getByText("58%")).toBeInTheDocument();
+    });
+  });
+
+  it("renders moderate clinical advisory badge for medium risk responses", async () => {
+    api.sendChat.mockResolvedValueOnce({
+      reply: "Monitor temperature every 4 hours.",
+      actions_taken: [],
+      language: "en",
+      hallucination_check: {
+        is_flagged: false,
+        confidence_score: 0.76,
+        risk_level: "MEDIUM",
+        flagged_reasons: [],
+      },
+    });
+
+    render(<ChatAgent />);
+
+    const input = screen.getByPlaceholderText("Type in Hindi, English or Hinglish…");
+    fireEvent.change(input, { target: { value: "Fever monitoring" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Clinical Advisory/i)).toBeInTheDocument();
+      expect(screen.getByText("76%")).toBeInTheDocument();
+    });
   });
 });
