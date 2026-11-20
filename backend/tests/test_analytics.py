@@ -1,52 +1,50 @@
-"""
-Unit tests for Analytics, Broadcast, and Weekly Insights Endpoints
-------------------------------------------------------------------
-"""
-
-from unittest.mock import patch
+from datetime import date
+import models
 
 
 def test_analytics_summary_empty(client):
-    """Verifies that GET /api/analytics/summary returns empty list when no workers exist."""
-    response = client.get("/api/analytics/summary")
-    assert response.status_code == 200
-    assert response.json() == []
+    res = client.get("/api/analytics/summary")
+    assert res.status_code == 200
+    assert res.json() == []
 
 
-def test_analytics_summary_with_records(client, sample_worker, sample_attendance):
-    """Verifies analytics calculations for total_logged, present count, and attendance_pct."""
-    response = client.get("/api/analytics/summary")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    item = data[0]
-    assert item["worker_id"] == sample_worker.id
-    assert item["name"] == sample_worker.name
-    assert item["total_logged"] == len(sample_attendance)
-    assert item["present"] == 4
-    # 4 out of 5 present -> 80.0%
-    assert item["attendance_pct"] == 80.0
+def test_analytics_summary_with_records(client, db_session):
+    w1 = models.HealthWorker(worker_code="W10", name="Worker 10", center="Center A", phone="111")
+    w2 = models.HealthWorker(worker_code="W20", name="Worker 20", center="Center B", phone="222")
+    db_session.add_all([w1, w2])
+    db_session.commit()
+
+    today = date.today()
+    r1 = models.AttendanceRecord(worker_id=w1.id, date=today, status="present")
+    r2 = models.AttendanceRecord(worker_id=w2.id, date=today, status="absent")
+    db_session.add_all([r1, r2])
+    db_session.commit()
+
+    res = client.get("/api/analytics/summary?days=7")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 2
+    # Verify workers are present in results with attendance_pct calculated
+    w1_item = next(item for item in data if item["worker_id"] == w1.id)
+    assert w1_item["present"] == 1
+    assert w1_item["total_logged"] == 1
+    assert w1_item["attendance_pct"] == 100.0
 
 
-def test_daily_broadcast_endpoint(client, sample_worker):
-    """Verifies GET /api/broadcast/daily returns broadcast text and persists notifications."""
-    with patch("main.generate_daily_broadcast", return_value="Swasthya Sathi Daily Broadcast Test"):
-        response = client.get("/api/broadcast/daily")
-        assert response.status_code == 200
-        data = response.json()
-        assert "message" in data
-        assert "Swasthya Sathi Daily Broadcast Test" in data["message"]
+def test_analytics_summary_sorting_order(client, db_session):
+    w1 = models.HealthWorker(worker_code="W_HIGH", name="High Worker", center="Center A", phone="111")
+    w2 = models.HealthWorker(worker_code="W_LOW", name="Low Worker", center="Center B", phone="222")
+    db_session.add_all([w1, w2])
+    db_session.commit()
 
+    r1 = models.AttendanceRecord(worker_id=w1.id, date=date.today(), status="present")
+    r2 = models.AttendanceRecord(worker_id=w2.id, date=date.today(), status="absent")
+    db_session.add_all([r1, r2])
+    db_session.commit()
 
-def test_weekly_insights_endpoint(client):
-    """Verifies GET and POST /api/insights/weekly return generated report text."""
-    with patch("main.generate_weekly_insights", return_value="Weekly performance report sample"):
-        # GET request
-        res_get = client.get("/api/insights/weekly?language=hi")
-        assert res_get.status_code == 200
-        assert res_get.json()["report"] == "Weekly performance report sample"
+    res = client.get("/api/analytics/summary")
+    assert res.status_code == 200
+    data = res.json()
+    # Sorted ascending by attendance_pct
+    assert data[0]["attendance_pct"] <= data[1]["attendance_pct"]
 
-        # POST request
-        res_post = client.post("/api/insights/weekly", json={"language": "en"})
-        assert res_post.status_code == 200
-        assert res_post.json()["report"] == "Weekly performance report sample"

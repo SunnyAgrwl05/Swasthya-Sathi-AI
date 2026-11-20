@@ -1,77 +1,60 @@
-# Comprehensive Testing Guide
+# 🧪 Backend Testing Guide
 
-This document describes the automated testing framework for **Swasthya Sathi AI** backend using **Pytest**, **HTTPX**, and **pytest-cov**.
+## Overview
 
-Closes Issues [#16](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI/issues/16) and [#17](https://github.com/SunnyAgrwl05/Swasthya-Sathi-AI/issues/17).
-
----
-
-## 1. Overview & Test Architecture
-
-The backend test suite is designed for high reliability, deterministic execution, and fast feedback loops:
-- **In-Memory Database Isolation**: All tests run against isolated in-memory SQLite instances using SQLAlchemy's `StaticPool`. Tests never modify or depend on local development `.db` files.
-- **Dependency Overrides**: The FastAPI `get_db` dependency is overridden per test function in `conftest.py`, ensuring full cleanup before and after every test.
-- **External API Mocking**: AI integrations (Google Gemini API and OpenRouter) are cleanly mocked via `unittest.mock.patch` to avoid network flakiness, rate limits, and API credential requirements.
-
-```
-backend/
-├── pytest.ini                  # Pytest configuration file
-├── requirements.txt            # Includes pytest and pytest-cov
-└── tests/
-    ├── conftest.py             # In-memory SQLite fixtures & TestClient setup
-    ├── test_root.py            # Basic root endpoint verification
-    ├── test_auth.py            # Health check & CORS verification
-    ├── test_health_worker.py   # Worker CRUD, duplicates, validation tests
-    ├── test_attendance.py      # Attendance logging, updates, filtering
-    ├── test_analytics.py       # Attendance summary, broadcasts, insights
-    └── test_ai_agent.py        # Chat agent endpoint & audit log verification
-```
+Swasthya Sathi AI backend utilizes **Pytest** alongside **pytest-cov** and **httpx** (`fastapi.testclient.TestClient`) to provide end-to-end automated testing for API endpoints, database ORM models, agent tool executions, and analytical queries.
 
 ---
 
-## 2. Running the Test Suite
+## Running Tests
 
-### Run All Tests
-From the project root:
-```bash
-python -m pytest backend
-```
-Or from within the `backend/` directory:
+From the `backend/` directory:
+
+### Run all tests
 ```bash
 pytest
 ```
 
-### Run with Detailed Verbosity
+### Run with verbose output
 ```bash
 pytest -v
 ```
 
-### Run a Specific Test Module
-```bash
-pytest tests/test_health_worker.py -v
-```
-
-### Run Tests with Coverage Report
-Generate code coverage metrics across backend services:
+### Run with test coverage report
 ```bash
 pytest --cov=. --cov-report=term-missing
 ```
 
-To export HTML coverage reports:
+### Run specific test module
 ```bash
-pytest --cov=. --cov-report=html
+pytest tests/test_health_worker.py -v
 ```
 
 ---
 
-## 3. Test Modules Summary
+## Test Suite Architecture
 
-| Module | Scope | Key Test Cases |
-| :--- | :--- | :--- |
-| `test_auth.py` | Health Check & Middleware | `GET /` status verification, CORS header assertions |
-| `test_health_worker.py` | Health Worker Roster | Worker listing, worker creation, duplicate `worker_code` rejection, validation rules, deletion |
-| `test_attendance.py` | Attendance Records | Logging attendance, in-place updates for same date, worker filtering, schema validation |
-| `test_analytics.py` | Analytics & Broadcasts | Summary percentage calculations, daily WhatsApp broadcasts, weekly insights generation |
-| `test_ai_agent.py` | AI Agent & Audit Logging | `POST /api/chat` execution, `ChatLog` and `AgentLog` database persistence, error handling |
-| `test_root.py` | Baseline Health | FastAPI root endpoint status |
-| `test_workers.py` | Legacy Roster Check | Baseline worker endpoint test |
+```text
+backend/tests/
+├── conftest.py           # In-memory SQLite database setup and TestClient fixtures
+├── test_root.py          # Service health and root route verification
+├── test_health_worker.py # Health Worker CRUD, unique constraint checks
+├── test_attendance.py    # Attendance logging, validation, and filtering
+├── test_analytics.py     # Attendance rate calculation and sorting orders
+├── test_database.py      # SQLAlchemy ORM models, relationships, and persistence
+├── test_ai_agent.py      # AI Chat endpoint, broadcast, and weekly reports (mocked LLM)
+├── test_agent_tools.py   # Agent execution tools (fuzzy matching, attendance marker)
+└── test_auth.py          # CORS middleware and route not found handling
+```
+
+---
+
+## Mocking External LLM APIs
+
+External Google Gemini / OpenRouter API calls are mocked using `unittest.mock.patch` in `test_ai_agent.py` to ensure fast, deterministic tests without incurring API quota or network dependencies:
+
+```python
+with patch("main.chat_with_agent", return_value=("Attendance marked", ["mark_worker_attendance"])):
+    res = client.post("/api/chat", json={"message": "Mark attendance"})
+    assert res.status_code == 200
+```
