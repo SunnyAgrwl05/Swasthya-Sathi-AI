@@ -249,6 +249,9 @@ def mark_attendance(
 
     try:
         try:
+            worker = _resolve_worker(db, worker_name)
+        except AmbiguousWorkerError as e:
+            return str(e)
             worker = _resolve_worker(db, worker_name, center=center or None)
         except AmbiguousWorkerError as error:
             return str(error)
@@ -337,6 +340,9 @@ def get_attendance_summary(worker_name: str = "", days: int = 30, center: str = 
         query = db.query(models.HealthWorker)
         if worker_name:
             try:
+                w = _resolve_worker(db, worker_name)
+            except AmbiguousWorkerError as e:
+                return str(e)
                 w = _resolve_worker(db, worker_name, center=center or None)
             except AmbiguousWorkerError as error:
                 return str(error)
@@ -376,12 +382,14 @@ def find_low_attendance_workers(min_percent: float = 75.0, days: int = 30) -> st
         since = datetime.date.today() - datetime.timedelta(days=days)
 
         flagged = []
+        newly_onboarded = []
 
         for w in db.query(models.HealthWorker).all():
 
             records = [r for r in w.records if r.date >= since]
 
             if not records:
+                newly_onboarded.append(w)
                 continue
 
             present = sum(1 for r in records if r.status == "present")
@@ -399,12 +407,15 @@ def find_low_attendance_workers(min_percent: float = 75.0, days: int = 30) -> st
                 )
 
         if not flagged:
-            return (
+            msg = (
                 "📊 Attendance Analysis\n\n"
                 f"All health workers have maintained attendance above {min_percent}% "
                 f"during the last {days} days.\n\n"
                 "✅ No follow-up required."
             )
+            if newly_onboarded:
+                msg += f"\n\n🌱 {len(newly_onboarded)} newly registered worker(s) are in onboarding (0 records logged, no penalty applied)."
+            return msg
 
         flagged.sort(key=lambda x: x["attendance"])
 
@@ -420,6 +431,13 @@ def find_low_attendance_workers(min_percent: float = 75.0, days: int = 30) -> st
             lines.append(f"   • Attendance : {w['attendance']}%")
             lines.append(f"   • Role       : {w['role']}")
             lines.append(f"   • Centre     : {w['center']}")
+            lines.append("")
+
+        if newly_onboarded:
+            lines.append("🌱 Newly Onboarded Workers (Exempt from Penalty)")
+            lines.append("")
+            for nw in newly_onboarded:
+                lines.append(f"• {nw.name} ({nw.center}) — Onboarding in progress")
             lines.append("")
 
         lines.append("🔴 Risk Level")
@@ -551,6 +569,26 @@ def generate_daily_broadcast() -> str:
         if flagged:
             lines.append("⚠ Workers Requiring Follow-up")
             lines.append("")
+
+            for worker in workers:
+                rec_count = len([r for r in worker.records if r.date >= since])
+                if rec_count == 0:
+                    continue
+
+                pct = round(
+                    sum(
+                        1
+                        for r in worker.records
+                        if r.date >= since and r.status == "present"
+                    )
+                    / rec_count
+                    * 100,
+                    1,
+                )
+
+                if pct < 75:
+                    lines.append(f"• {worker.name} ({pct}%)")
+
             for item in flagged:
                 lines.append(f"• {item}")
             lines.append("")
