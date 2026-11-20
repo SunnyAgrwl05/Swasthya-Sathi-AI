@@ -13,54 +13,11 @@ export const api = {
   getWorkers: () => req('/api/workers'),
   getSummary: (days = 30) => req(`/api/analytics/summary?days=${days}`),
   sendChat: (message, context = null) => {
-    const payload = { message };
-    if (context) payload.context = context;
-    return req('/api/chat', { method: 'POST', body: JSON.stringify(payload) });
-  },
-  streamChat: async (message, { onChunk, onActions, onDone, onError }) => {
-    try {
-      const res = await fetch(`${BASE}/api/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
-      })
-      if (!res.ok) throw new Error(`Stream error: ${res.status}`)
-
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('Readable stream not supported')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed.startsWith('data:')) continue
-          try {
-            const data = JSON.parse(trimmed.slice(5).trim())
-            if (data.type === 'actions' && onActions) {
-              onActions(data.actions)
-            } else if (data.type === 'chunk' && onChunk) {
-              onChunk(data.content)
-            } else if (data.type === 'done' && onDone) {
-              onDone(data)
-            }
-          } catch {
-            // Ignore parse errors on partial chunks
-          }
-        }
-      }
-    } catch (err) {
-      if (onError) onError(err)
-      else throw err
+    const payload = { message }
+    if (context !== null && context !== undefined) {
+      payload.context = context
     }
+    return req('/api/chat', { method: 'POST', body: JSON.stringify(payload) })
   },
   checkHallucination: (query, response, context = null, retrieval_score = null) =>
     req('/api/safety/check-hallucination', {
@@ -75,6 +32,28 @@ export const api = {
             language,
         }),
     }),
+  getWorkerAttendanceHistory: (workerId, days = 30) =>
+    req(`/api/workers/${workerId}/attendance-history?days=${days}`),
+  applyLeave: (payload) =>
+    req('/api/leaves', { method: 'POST', body: JSON.stringify(payload) }),
+  getLeaves: (workerId = null) =>
+    req(`/api/leaves${workerId ? `?worker_id=${workerId}` : ''}`),
+  updateLeaveStatus: (leaveId, status, approvedBy = "Supervisor") =>
+    req(`/api/leaves/${leaveId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, approved_by: approvedBy }),
+    }),
+  getSMSQueue: (status = null) =>
+    req(`/api/notifications/queue${status ? `?status=${status}` : ""}`),
+  processSMSQueue: () =>
+    req("/api/notifications/queue/process", { method: "POST" }),
+  dispatchSMSAlerts: (payload = {}) =>
+    req('/api/notifications/dispatch-sms', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getNotificationLogs: (limit = 20) =>
+    req(`/api/notifications/logs?limit=${limit}`),
 }
 
 
