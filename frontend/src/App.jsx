@@ -43,7 +43,7 @@ export default function App() {
         <DailyBroadcast />
         <AttendanceChart summary={summary} />
         <WeeklyInsights />
-        <WorkerTable workers={workers} summary={summary} />
+        <WorkerTable workers={workers} summary={summary} onRefresh={load} />
       </div>
         <div>
           <ChatAgent />
